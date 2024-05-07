@@ -2,16 +2,21 @@ import _tkinter
 import tkinter as tk
 from tkinter import ttk, filedialog
 import pandas as pd
+from matplotlib import pyplot as plt
+from sklearn.cross_decomposition import PLSRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import r2_score
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 
-class SelectFeaturesWindow:
+class SelectColumnsWindow:
     def __init__(self, parent, df_raw):
         self.parent = parent
         self.columns = df_raw.columns
         self.selected_columns = []
 
         self.window = tk.Toplevel(parent)
-        self.window.title("Select Features")
+        self.window.title("Select Columns")
         self.window.geometry("200x400")
 
         self.listbox = tk.Listbox(self.window, selectmode=tk.EXTENDED)
@@ -40,6 +45,75 @@ class SelectFeaturesWindow:
         self.window.destroy()
 
 
+class SelectPlsOptions:
+    def __init__(self, parent, df_X, df_y):
+        self.top_left_plot = None
+        self.parent = parent
+        self.df_X = df_X
+        self.df_y = df_y
+        self.x_train = []
+        self.y_train = []
+        self.x_test = []
+        self.y_test = []
+        self.num_components = []
+        self.y_pred_train = []
+        self.y_pred_test = []
+        self.r2_train = []
+        self.r2_test = []
+        self.pls = None
+
+        self.window = tk.Toplevel(parent)
+        self.window.title("PLS Options")
+        self.window.geometry("320x200")
+
+        # Label and entry for number of components
+        self.num_components_label = ttk.Label(self.window, text="Number of Components:")
+        self.num_components_label.grid(row=0, column=0, padx=5, pady=5)
+
+        self.num_components_entry = ttk.Entry(self.window, width=10)
+        self.num_components_entry.grid(row=0, column=1, padx=5, pady=5)
+        self.num_components_entry.insert(tk.END, "2")
+
+        # ComboBox for selecting label
+        self.select_label_label = ttk.Label(self.window, text="Select Label:")
+        self.select_label_label.grid(row=1, column=0, padx=5, pady=5)
+
+        self.select_label_combobox = ttk.Combobox(self.window, values=self.df_y.columns.tolist())
+        self.select_label_combobox.grid(row=1, column=1, padx=5, pady=5)
+        self.select_label_combobox.current(0)
+
+        # Apply and Cancel buttons
+        self.apply_button = ttk.Button(self.window, text="Apply", command=self.apply_pls)
+        self.apply_button.grid(row=2, column=0, padx=5, pady=5)
+
+        self.cancel_button = ttk.Button(self.window, text="Cancel", command=self.window.destroy)
+        self.cancel_button.grid(row=2, column=1, padx=5, pady=5)
+
+    def apply_pls(self):
+
+        # Split data into train and test sets
+        self.x_train, self.x_test, self.y_train, self.y_test = train_test_split(self.df_X, self.df_y,
+                                                                                test_size=0.2)
+        self.num_components = int(self.num_components_entry.get())
+        selected_label = self.select_label_combobox.get()
+
+        # Initialize PLS model with desired number of components
+        self.pls = PLSRegression(n_components=self.num_components)
+
+        # Fit the model
+        self.pls.fit(self.x_train, self.y_train)
+
+        # Predict on test set
+        self.y_pred_train = self.pls.predict(self.x_train)
+        self.y_pred_test = self.pls.predict(self.x_test)
+
+        # Calculate R^2 score
+        self.r2_train = r2_score(self.y_train, self.y_pred_train)
+        self.r2_test = r2_score(self.y_test, self.y_pred_test)
+
+        self.window.destroy()
+
+
 class MyChemometrix:
     def __init__(self, master):
         super().__init__()
@@ -49,6 +123,8 @@ class MyChemometrix:
         # Get screen size
         screen_width = self.master.winfo_screenwidth()
         screen_height = self.master.winfo_screenheight()
+
+        self.master.geometry(f'{screen_width}x{screen_height}')
 
         # Calculate frame sizes
         buttons_frame_height = screen_height // 25
@@ -82,22 +158,47 @@ class MyChemometrix:
         self.graphs_frame = ttk.LabelFrame(self.paned_window, text="Graphics", width=graphs_frame_width)
         self.paned_window.add(self.graphs_frame)
 
+        self.fig1 = plt.Figure(figsize=(5, 5), dpi=100)
+        self.fig2 = plt.Figure(figsize=(5, 5), dpi=100)
+        self.fig3 = plt.Figure(figsize=(5, 5), dpi=100)
+        self.fig4 = plt.Figure(figsize=(5, 5), dpi=100)
         # Canvas areas in the graphs_frame
         self.top_left_canvas = tk.Canvas(self.graphs_frame, bg="white",
                                          width=graphs_frame_width // 2, height=screen_height // 2)
         self.top_left_canvas.grid(row=0, column=0, sticky="nsew")
 
+        self.top_left_plot = FigureCanvasTkAgg(self.fig1, master=self.top_left_canvas)
+        self.top_left_plot.get_tk_widget().pack(fill=tk.BOTH, expand=1)
+        # Add line frame around the canvas widget
+        self.top_left_plot.get_tk_widget().config(highlightthickness=1, highlightbackground="black")
+        self.top_left_plot.draw()
+
         self.top_right_canvas = tk.Canvas(self.graphs_frame, bg="white",
                                           width=graphs_frame_width // 2, height=screen_height // 2)
         self.top_right_canvas.grid(row=0, column=1, sticky="nsew")
+
+        self.top_right_plot = FigureCanvasTkAgg(self.fig2, master=self.top_right_canvas)
+        self.top_right_plot.get_tk_widget().pack(fill=tk.BOTH, expand=1)
+        self.top_right_plot.get_tk_widget().config(highlightthickness=1, highlightbackground="black")
+        self.top_right_plot.draw()
 
         self.bottom_left_canvas = tk.Canvas(self.graphs_frame, bg="white",
                                             width=graphs_frame_width // 2, height=screen_height // 2)
         self.bottom_left_canvas.grid(row=1, column=0, sticky="nsew")
 
+        self.bottom_left_plot = FigureCanvasTkAgg(self.fig3, master=self.bottom_left_canvas)
+        self.bottom_left_plot.get_tk_widget().pack(fill=tk.BOTH, expand=1)
+        self.bottom_left_plot.get_tk_widget().config(highlightthickness=1, highlightbackground="black")
+        self.bottom_left_plot.draw()
+
         self.bottom_right_canvas = tk.Canvas(self.graphs_frame, bg="white",
                                              width=graphs_frame_width // 2, height=screen_height // 2)
         self.bottom_right_canvas.grid(row=1, column=1, sticky="nsew")
+
+        self.bottom_right_plot = FigureCanvasTkAgg(self.fig4, master=self.bottom_right_canvas)
+        self.bottom_right_plot.get_tk_widget().pack(fill=tk.BOTH, expand=1)
+        self.bottom_right_plot.get_tk_widget().config(highlightthickness=1, highlightbackground="black")
+        self.bottom_right_plot.draw()
 
         # Configure row and column weights for resizing
         self.graphs_frame.grid_rowconfigure(0, weight=1)
@@ -193,10 +294,8 @@ class MyChemometrix:
         self.snv_button = ttk.Button(self.preprocessing_buttons_frame, text="SNV", state="disabled")
         self.snv_button.pack(side="left", fill="both", padx=5, pady=5)
 
-        self.label_select_button = ttk.Button(self.regression_buttons_frame, text="Select Label", state="disabled")
-        self.label_select_button.pack(side="left", fill="both", padx=5, pady=5)
-
-        self.pls_button = ttk.Button(self.regression_buttons_frame, text="PLS", state="disabled")
+        self.pls_button = ttk.Button(self.regression_buttons_frame, text="PLS", state="disabled",
+                                     command=self.open_pls_window)
         self.pls_button.pack(side="left", fill="both", padx=5, pady=5)
 
         self.optimize_button = ttk.Button(self.regression_buttons_frame, text="Optimize", state="disabled")
@@ -246,21 +345,23 @@ class MyChemometrix:
 
     def open_select_features_window(self):
         if self.df_raw is not None:
-            select_features_window = SelectFeaturesWindow(self.master, self.df_raw)
+            select_features_window = SelectColumnsWindow(self.master, self.df_raw)
             self.master.wait_window(select_features_window.window)
             selected_columns = select_features_window.selected_columns
             self.df_X = self.df_raw[selected_columns]
             self.display_table(self.features_data_tree, self.df_X)
+            self.activate_buttons()
         else:
             pass
 
     def open_select_labels_window(self):
         if self.df_raw is not None:
-            select_features_window = SelectFeaturesWindow(self.master, self.df_raw)
-            self.master.wait_window(select_features_window.window)
-            selected_columns = select_features_window.selected_columns
+            select_labels_window = SelectColumnsWindow(self.master, self.df_raw)
+            self.master.wait_window(select_labels_window.window)
+            selected_columns = select_labels_window.selected_columns
             self.df_y = self.df_raw[selected_columns]
             self.display_table(self.labels_data_tree, self.df_y)
+            self.activate_buttons()
         else:
             pass
 
@@ -268,14 +369,39 @@ class MyChemometrix:
         if self.df_raw is not None:
             self.select_y_button["state"] = "normal"
             self.select_x_button["state"] = "normal"
-            # self.filter_data_button["state"] = "normal"
-            # self.msc_button["state"] = "normal"
-            # self.snv_button["state"] = "normal"
-            # self.label_select_button["state"] = "normal"
-            # self.pls_button["state"] = "normal"
-            # self.optimize_button["state"] = "normal"
-            # self.pca_button["state"] = "normal"
-            # self.LDA_button["state"] = "normal"
+            if self.df_X is not None and self.df_y is not None:
+                self.filter_data_button["state"] = "normal"
+                self.msc_button["state"] = "normal"
+                self.snv_button["state"] = "normal"
+                self.pls_button["state"] = "normal"
+                self.optimize_button["state"] = "normal"
+                self.pca_button["state"] = "normal"
+                self.LDA_button["state"] = "normal"
+
+    def open_pls_window(self):
+        select_pls_options_window = SelectPlsOptions(self.master, self.df_X,
+                                                     self.df_y)
+
+        self.master.wait_window(select_pls_options_window.window)
+
+        ax1 = self.fig1.add_subplot(111)
+        ax1.scatter(select_pls_options_window.y_train, select_pls_options_window.y_pred_train,
+                    color='blue', s=1,
+                    label=f'Trained: R2 Score: {select_pls_options_window.r2_train:.2f}')
+        ax1.scatter(select_pls_options_window.y_test, select_pls_options_window.y_pred_test,
+                    color='red', s=1,
+                    label=f'Tested: R2 Score: {select_pls_options_window.r2_test:.2f}')
+        ax1.plot(select_pls_options_window.y_train, select_pls_options_window.y_train,
+                 color='blue', linewidth=1, linestyle='--')
+        ax1.plot(select_pls_options_window.y_test, select_pls_options_window.y_test,
+                 color='red', linewidth=1, linestyle='--')
+        ax1.set_title('Predicted vs True Results')
+        ax1.set_xlabel('True Values')
+        ax1.set_ylabel('Predicted Values')
+        ax1.legend(loc='lower right')
+        ax1.grid(True)
+
+        self.top_left_plot.draw()
 
 
 def main():
