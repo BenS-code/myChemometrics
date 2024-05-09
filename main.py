@@ -53,6 +53,59 @@ class SelectColumnsWindow:
         self.window.destroy()
 
 
+class FilterData:
+    def __init__(self, parent):
+        self.is_drop_empty_on = None
+        self.y_threshold = 3.0
+        self.x_threshold = 3.0
+        self.parent = parent
+        self.selected_columns = []
+
+        self.window = tk.Toplevel(parent)
+        self.window.title("Filter Data")
+        self.window.geometry("500x200")
+
+        # Variable to hold the state of the checkbox
+        self.drop_empty_var = tk.BooleanVar()
+        self.drop_empty_var.set(True)
+
+        ttk.Label(self.window,
+                  text="Remove above \nthreshold (# STD):").grid(row=1, column=0, padx=5, pady=10, sticky='ew')
+
+        self.x_std_num_label = ttk.Label(self.window, text="X Correlation Distance")
+        self.x_std_num_label.grid(row=0, column=1, padx=5, pady=10, sticky='ew')
+
+        self.x_std_num_entry = ttk.Entry(self.window)
+        self.x_std_num_entry.grid(row=1, column=1, padx=5, pady=10, sticky='ew')
+        self.x_std_num_entry.insert(tk.END, "3")
+
+        # Label and entry for number of components
+        self.y_std_num_label = ttk.Label(self.window, text="y Outliers")
+        self.y_std_num_label.grid(row=0, column=2, padx=5, pady=10, sticky='ew')
+
+        self.y_std_num_entry = ttk.Entry(self.window)
+        self.y_std_num_entry.grid(row=1, column=2, padx=5, pady=10, sticky='ew')
+        self.y_std_num_entry.insert(tk.END, "3")
+
+        self.drop_empty_checkbox = tk.Checkbutton(self.window, variable=self.drop_empty_var,
+                                                  text=" Remove rows with\n empty cells")
+        self.drop_empty_checkbox.grid(row=2, column=0, padx=5, pady=5, sticky='ew')
+
+        self.filter_button = ttk.Button(self.window, text="Filter", command=self.filter_raw_data)
+        self.filter_button.grid(row=3, column=0, padx=5, pady=10, sticky='ew')
+
+        self.cancel_button = ttk.Button(self.window, text="Cancel", command=self.window.destroy)
+        self.cancel_button.grid(row=3, column=1, padx=5, pady=10, sticky='ew')
+
+    def filter_raw_data(self):
+
+        self.is_drop_empty_on = self.drop_empty_var.get()
+        self.x_threshold = float(self.x_std_num_entry.get())
+        self.y_threshold = float(self.y_std_num_entry.get())
+
+        self.window.destroy()
+
+
 class PLS:
     def __init__(self, parent, df_X, df_y):
         self.components_range = None
@@ -172,6 +225,8 @@ class PLS:
 class MyChemometrix:
     def __init__(self, master):
         super().__init__()
+        self.selected_x_columns = []
+        self.selected_y_columns = []
         self.master = master
         self.master.title("MyChemometrix")
 
@@ -345,7 +400,8 @@ class MyChemometrix:
                                                   command=self.display_raw)
         self.display_raw_data_button.pack(side="left", fill="both", padx=5, pady=5)
 
-        self.filter_data_button = ttk.Button(self.preprocessing_buttons_frame, text="Filter Data", state="disabled")
+        self.filter_data_button = ttk.Button(self.preprocessing_buttons_frame, text="Filter Data", state="disabled",
+                                             command=self.filter_data)
         self.filter_data_button.pack(side="left", fill="both", padx=5, pady=5)
 
         self.msc_button = ttk.Button(self.preprocessing_buttons_frame, text="MSC", state="disabled")
@@ -387,7 +443,7 @@ class MyChemometrix:
 
     def display_table(self, tree, df):
         try:
-            tree.delete(*self.raw_data_tree.get_children())
+            tree.delete(*tree.get_children())
 
         except _tkinter.TclError:
             pass
@@ -407,8 +463,8 @@ class MyChemometrix:
         if self.df_raw is not None:
             select_features_window = SelectColumnsWindow(self.master, self.df_raw)
             self.master.wait_window(select_features_window.window)
-            selected_columns = select_features_window.selected_columns
-            self.df_X = self.df_raw[selected_columns]
+            self.selected_x_columns = select_features_window.selected_columns
+            self.df_X = self.df_raw[self.selected_x_columns]
             self.display_table(self.features_data_tree, self.df_X)
             self.activate_buttons()
         else:
@@ -418,8 +474,8 @@ class MyChemometrix:
         if self.df_raw is not None:
             select_labels_window = SelectColumnsWindow(self.master, self.df_raw)
             self.master.wait_window(select_labels_window.window)
-            selected_columns = select_labels_window.selected_columns
-            self.df_y = self.df_raw[selected_columns]
+            self.selected_y_columns = select_labels_window.selected_columns
+            self.df_y = self.df_raw[self.selected_y_columns]
             self.display_table(self.labels_data_tree, self.df_y)
             self.activate_buttons()
         else:
@@ -468,7 +524,8 @@ class MyChemometrix:
         ax2.xaxis.set_major_locator(plt.MaxNLocator(6))
 
         dissimilarities = cdist(self.df_X, self.df_X, metric="correlation")
-        normalized_dissimilarities_vector = (dissimilarities[1]-np.mean(dissimilarities[1]))/np.std(dissimilarities[1])
+        normalized_dissimilarities_vector = (dissimilarities[1] - np.mean(dissimilarities[1])) / np.std(
+            dissimilarities[1])
 
         ax3.scatter(self.df_X.index, normalized_dissimilarities_vector)
         ax3.set_title('Normalized Correlation Distance of X')
@@ -488,6 +545,37 @@ class MyChemometrix:
         self.top_right_plot.draw()
         self.bottom_left_plot.draw()
         self.bottom_right_plot.draw()
+
+    def filter_data(self):
+
+        df_temp = pd.concat([self.df_y, self.df_X])
+
+        filter_window = FilterData(self.master)
+
+        dissimilarities = cdist(df_temp[self.selected_x_columns], df_temp[self.selected_x_columns],
+                                metric="correlation")
+
+        normalized_dissimilarities_vector = (dissimilarities[1] - np.mean(dissimilarities[1])) / np.std(
+            dissimilarities[1])
+
+        rows_to_remove = np.where(np.abs(normalized_dissimilarities_vector) > filter_window.x_threshold)
+
+        df_temp = df_temp.drop(index=rows_to_remove[0].tolist())
+
+        for col in df_temp[self.selected_y_columns].columns:
+            mean = df_temp[col].mean()
+            std = df_temp[col].std()
+#######################################################################################
+            df_temp = df_temp[(df_temp[col] - mean).abs() <= (filter_window.y_threshold * std)]
+
+        if filter_window.is_drop_empty_on:
+            df_temp = df_temp.dropna()
+
+        self.df_X = df_temp[self.selected_x_columns]
+        self.df_y = df_temp[self.selected_y_columns]
+
+        self.display_table(self.features_data_tree, self.df_X)
+        self.display_table(self.labels_data_tree, self.df_y)
 
     def open_pls_window(self):
         pls_window = PLS(self.master, self.df_X,
