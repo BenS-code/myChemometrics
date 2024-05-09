@@ -54,12 +54,16 @@ class SelectColumnsWindow:
 
 
 class FilterData:
-    def __init__(self, parent):
+    def __init__(self, parent, df_X, df_y):
         self.is_drop_empty_on = None
-        self.y_threshold = 3.0
         self.x_threshold = 3.0
+        self.y_threshold = 3.0
+        self.df_X = df_X
+        self.df_y = df_y
+        self.selected_x_columns = self.df_X.columns
+        self.selected_y_columns = self.df_y.columns
+        self.df_temp = pd.concat([self.df_y, self.df_X], axis=1)
         self.parent = parent
-        self.selected_columns = []
 
         self.window = tk.Toplevel(parent)
         self.window.title("Filter Data")
@@ -102,6 +106,28 @@ class FilterData:
         self.is_drop_empty_on = self.drop_empty_var.get()
         self.x_threshold = float(self.x_std_num_entry.get())
         self.y_threshold = float(self.y_std_num_entry.get())
+
+        print(self.is_drop_empty_on, self.x_threshold, self.y_threshold)
+
+        dissimilarities = cdist(self.df_temp[self.selected_x_columns], self.df_temp[self.selected_x_columns],
+                                metric="correlation")
+
+        normalized_dissimilarities_vector = (dissimilarities[1] - np.mean(dissimilarities[1])) / np.std(
+            dissimilarities[1])
+
+        rows_to_remove = np.where(np.abs(normalized_dissimilarities_vector) > self.x_threshold)
+
+        self.df_temp = self.df_temp.drop(index=rows_to_remove[0].tolist())
+
+        for col in self.df_temp[self.selected_y_columns].columns:
+            mean = self.df_temp[col].mean()
+            std = self.df_temp[col].std()
+            self.df_temp = self.df_temp[(self.df_temp[col] - mean).abs() <= (self.y_threshold * std)]
+
+        if self.is_drop_empty_on:
+            self.df_temp = self.df_temp.dropna()
+
+        self.df_temp = self.df_temp.reset_index()
 
         self.window.destroy()
 
@@ -225,6 +251,7 @@ class PLS:
 class MyChemometrix:
     def __init__(self, master):
         super().__init__()
+
         self.selected_x_columns = []
         self.selected_y_columns = []
         self.master = master
@@ -548,31 +575,12 @@ class MyChemometrix:
 
     def filter_data(self):
 
-        df_temp = pd.concat([self.df_y, self.df_X])
+        filter_window = FilterData(self.master, self.df_X, self.df_y)
 
-        filter_window = FilterData(self.master)
+        self.master.wait_window(filter_window.window)
 
-        dissimilarities = cdist(df_temp[self.selected_x_columns], df_temp[self.selected_x_columns],
-                                metric="correlation")
-
-        normalized_dissimilarities_vector = (dissimilarities[1] - np.mean(dissimilarities[1])) / np.std(
-            dissimilarities[1])
-
-        rows_to_remove = np.where(np.abs(normalized_dissimilarities_vector) > filter_window.x_threshold)
-
-        df_temp = df_temp.drop(index=rows_to_remove[0].tolist())
-
-        for col in df_temp[self.selected_y_columns].columns:
-            mean = df_temp[col].mean()
-            std = df_temp[col].std()
-#######################################################################################
-            df_temp = df_temp[(df_temp[col] - mean).abs() <= (filter_window.y_threshold * std)]
-
-        if filter_window.is_drop_empty_on:
-            df_temp = df_temp.dropna()
-
-        self.df_X = df_temp[self.selected_x_columns]
-        self.df_y = df_temp[self.selected_y_columns]
+        self.df_X = filter_window.df_temp[self.selected_x_columns]
+        self.df_y = filter_window.df_temp[self.selected_y_columns]
 
         self.display_table(self.features_data_tree, self.df_X)
         self.display_table(self.labels_data_tree, self.df_y)
