@@ -341,7 +341,7 @@ class MyChemometrix:
                                           command=self.open_select_features_window)
         self.select_x_button.pack(side="left", fill="both", padx=5, pady=5)
 
-        self.display_raw_data_button = ttk.Button(self.data_buttons_frame, text="Display Data",
+        self.display_raw_data_button = ttk.Button(self.data_buttons_frame, text="Display Data", state="disabled",
                                                   command=self.display_raw)
         self.display_raw_data_button.pack(side="left", fill="both", padx=5, pady=5)
 
@@ -430,6 +430,7 @@ class MyChemometrix:
             self.select_y_button["state"] = "normal"
             self.select_x_button["state"] = "normal"
             if self.df_X is not None and self.df_y is not None:
+                self.display_raw_data_button["state"] = "normal"
                 self.filter_data_button["state"] = "normal"
                 self.msc_button["state"] = "normal"
                 self.snv_button["state"] = "normal"
@@ -473,10 +474,12 @@ class MyChemometrix:
         ax3.set_title('Normalized Correlation Distance of X')
         ax3.set_xlabel('X rows [a.u]')
         ax3.set_ylabel('Amplitude [a.u]')
+        ax3.grid(True, alpha=0.3)
         ax3.xaxis.set_major_locator(plt.MaxNLocator(6))
 
         ax4.violinplot(self.df_y, showmeans=False, showmedians=True)
         ax4.boxplot(self.df_y, sym=".")
+        ax4.set_xlabel('Value [a.u]')
 
         ax4.set_xticks(range(1, len(self.df_y.columns) + 1))
         ax4.set_xticklabels(self.df_y.columns)
