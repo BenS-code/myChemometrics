@@ -6,7 +6,7 @@ import numpy as np
 from scipy.spatial.distance import cdist
 from matplotlib import pyplot as plt
 from sklearn.cross_decomposition import PLSRegression
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, cross_val_predict
 from sklearn.metrics import r2_score, mean_squared_error
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
@@ -107,8 +107,6 @@ class FilterData:
         self.x_threshold = float(self.x_std_num_entry.get())
         self.y_threshold = float(self.y_std_num_entry.get())
 
-        print(self.is_drop_empty_on, self.x_threshold, self.y_threshold)
-
         dissimilarities = cdist(self.df_temp[self.selected_x_columns], self.df_temp[self.selected_x_columns],
                                 metric="correlation")
 
@@ -134,9 +132,8 @@ class FilterData:
 
 class PLS:
     def __init__(self, parent, df_X, df_y):
+
         self.components_range = None
-        self.rmse_test = None
-        self.rmse_train = None
         self.train_test_ratio = None
         self.selected_label = None
         self.top_left_plot = None
@@ -147,11 +144,16 @@ class PLS:
         self.y_train = []
         self.x_test = []
         self.y_test = []
+        self.y_pred_train = None
+        self.y_pred_cv = None
+        self.y_pred_test = None
         self.num_components = []
-        self.y_pred_train = []
-        self.y_pred_test = []
-        self.r2_train = []
-        self.r2_test = []
+        self.r2_train = None
+        self.r2_cv = None
+        self.r2_test = None
+        self.rmse_train = None
+        self.rmse_test = None
+        self.rmse_cv = None
         self.pls = None
         self.rmse_scores = []
         self.r2_scores = []
@@ -181,7 +183,7 @@ class PLS:
 
         self.train_test_ratio_entry = ttk.Entry(self.window)
         self.train_test_ratio_entry.grid(row=2, column=1, padx=5, pady=5, sticky='ew')
-        self.train_test_ratio_entry.insert(tk.END, "0.2")
+        self.train_test_ratio_entry.insert(tk.END, "0.1")
 
         # Apply and Cancel buttons
         self.apply_button = ttk.Button(self.window, text="Apply", command=self.apply_pls)
@@ -207,7 +209,7 @@ class PLS:
         if self.num_components > self.df_X.shape[1]:
             self.num_components = self.df_X.shape[1]
 
-        self.components_range = range(1, 41)
+        self.components_range = range(1, 21)
         if max(self.components_range) > self.df_X.shape[1]:
             self.components_range = range(1, self.df_X.shape[1])
 
@@ -217,15 +219,15 @@ class PLS:
             pls = PLSRegression(n_components=n_components)
             pls.fit(self.x_train, self.y_train)
 
-            # Predict labels for the test data
-            y_pred = pls.predict(self.x_test)
+            # Cross-validation
+            y_cv = cross_val_predict(pls, self.x_train, self.y_train, cv=10)
 
             # Calculate RMSE and append to the list
-            rmse = np.sqrt(mean_squared_error(self.y_test, y_pred))
+            rmse = np.sqrt(mean_squared_error(self.y_train, y_cv))
             self.rmse_scores.append(rmse)
 
             # Calculate R2 score and append to the list
-            r2 = r2_score(self.y_test, y_pred)
+            r2 = r2_score(self.y_train, y_cv)
             self.r2_scores.append(r2)
 
         # Initialize PLS model with desired number of components
@@ -234,15 +236,21 @@ class PLS:
         # Fit the model
         self.pls.fit(self.x_train, self.y_train)
 
-        # Predict on test set
         self.y_pred_train = self.pls.predict(self.x_train)
+
+        # Cross-validation
+        self.y_pred_cv = cross_val_predict(self.pls, self.x_train, self.y_train, cv=10)
+
+        # Predict on test set
         self.y_pred_test = self.pls.predict(self.x_test)
 
         # Calculate R^2 score
         self.r2_train = r2_score(self.y_train, self.y_pred_train)
+        self.r2_cv = r2_score(self.y_train, self.y_pred_cv)
         self.r2_test = r2_score(self.y_test, self.y_pred_test)
 
         self.rmse_train = np.sqrt(mean_squared_error(self.y_train, self.y_pred_train))
+        self.rmse_cv = np.sqrt(mean_squared_error(self.y_train, self.y_pred_cv))
         self.rmse_test = np.sqrt(mean_squared_error(self.y_test, self.y_pred_test))
 
         self.window.destroy()
@@ -431,10 +439,12 @@ class MyChemometrix:
                                              command=self.filter_data)
         self.filter_data_button.pack(side="left", fill="both", padx=5, pady=5)
 
-        self.msc_button = ttk.Button(self.preprocessing_buttons_frame, text="MSC", state="disabled")
+        self.msc_button = ttk.Button(self.preprocessing_buttons_frame, text="MSC", state="disabled",
+                                     command=self.apply_msc)
         self.msc_button.pack(side="left", fill="both", padx=5, pady=5)
 
-        self.snv_button = ttk.Button(self.preprocessing_buttons_frame, text="SNV", state="disabled")
+        self.snv_button = ttk.Button(self.preprocessing_buttons_frame, text="SNV", state="disabled",
+                                     command=self.apply_snv)
         self.snv_button.pack(side="left", fill="both", padx=5, pady=5)
 
         self.pls_button = ttk.Button(self.regression_buttons_frame, text="PLS", state="disabled",
@@ -585,6 +595,45 @@ class MyChemometrix:
         self.display_table(self.features_data_tree, self.df_X)
         self.display_table(self.labels_data_tree, self.df_y)
 
+    def apply_msc(self):
+        """
+        Apply Multiplicative Scatter Correction (MSC) to NIR spectra.
+        """
+        temp_input = self.df_X
+        for i in range(temp_input.shape[0]):
+            temp_input.iloc[i, :] -= temp_input.iloc[i, :].mean()
+
+        ref = np.mean(temp_input, axis=0)
+
+        # Define a new array and populate it with the corrected data
+        data_msc = temp_input.copy()
+        for i in range(temp_input.shape[0]):
+            # Run regression
+            fit = np.polyfit(ref, temp_input.iloc[i, :], 1, full=True)
+            # Apply correction
+            data_msc.iloc[i, :] = (temp_input.iloc[i, :] - fit[0][1]) / fit[0][0]
+
+        self.df_X = data_msc.copy()
+
+        self.display_table(self.features_data_tree, self.df_X)
+
+    def apply_snv(self):
+        """
+        Apply Standard Normal Variate (SNV) correction to NIR spectra.
+        """
+
+        temp_input = self.df_X
+
+        data_snv = temp_input.copy()
+        for i in range(temp_input.shape[0]):
+            # Apply correction
+            data_snv.iloc[i, :] = (temp_input.iloc[i, :] -
+                                   np.mean(temp_input.iloc[i, :])) / np.std(temp_input.iloc[i, :])
+
+        self.df_X = data_snv.copy()
+
+        self.display_table(self.features_data_tree, self.df_X)
+
     def open_pls_window(self):
         pls_window = PLS(self.master, self.df_X,
                          self.df_y)
@@ -595,39 +644,37 @@ class MyChemometrix:
 
         ax1 = self.fig1.add_subplot(111)
 
-        print(pls_window.rmse_train)
-        print(pls_window.r2_train)
-
         # Creating the legend table
-        legend_table = ax1.table(cellText=[[f'{pls_window.rmse_train:.6f}', f'{pls_window.r2_train:.6f}'],
-                                           [f'{pls_window.rmse_test:.6f}', f'{pls_window.r2_test:.6f}']],
-                                 colLabels=['RMSE', 'R-Square'],
+        legend_table = ax1.table(cellText=[[f'Train', f'{pls_window.rmse_train:.6f}', f'{pls_window.r2_train:.6f}'],
+                                           [f'CV', f'{pls_window.rmse_cv:.6f}', f'{pls_window.r2_cv:.6f}'],
+                                           [f'Test', f'{pls_window.rmse_test:.6f}', f'{pls_window.r2_test:.6f}']],
+                                 colLabels=['', 'RMSE', 'R-Square'],
                                  loc='upper left',
                                  cellLoc='center',
-                                 cellColours=[['b', 'b'], ['r', 'r']])
+                                 cellColours=[['w', 'b', 'b'], ['w', 'g', 'g'], ['w', 'r', 'r']])
 
         # Styling the legend table
         legend_table.auto_set_font_size(False)
         legend_table.set_fontsize(10)
-        legend_table.scale(0.6, 1.1)  # Adjust the size of the legend table
+        legend_table.scale(0.4, 1.2)  # Adjust the size of the legend table
 
         ax1.scatter(pls_window.y_train, pls_window.y_pred_train,
-                    color='blue', s=1,
-                    label=f'Trained: R2={pls_window.r2_train:.2f}\n'
-                          f'         RMSE={pls_window.rmse_train:.2f}')
+                    color='blue', s=6, label="Trained")
+        ax1.scatter(pls_window.y_train, pls_window.y_pred_cv,
+                    color='green', s=2, label="CV")
         ax1.scatter(pls_window.y_test, pls_window.y_pred_test,
-                    color='red', s=1,
-                    label=f'Tested: R2={pls_window.r2_test:.2f}')
-        ax1.plot(pls_window.y_train, pls_window.y_train,
-                 color='blue', linewidth=1, linestyle='--')
-        ax1.plot(pls_window.y_test, pls_window.y_test,
-                 color='red', linewidth=1, linestyle='--')
+                    color='red', s=6,
+                    label='Tested')
+        # ax1.plot(np.polyval(z, pls_window.y_pred_train), pls_window.y_train,
+        #          color='b', linewidth=1, linestyle='--', label='Model Line')
+        # ax1.plot(pls_window.y_train, pls_window.y_train,
+        #          color='r', linewidth=1, linestyle='--', label='Ideal Line')
         ax1.set_title(f'Predicted vs True Results - Label={pls_window.selected_label} |'
-                      f' LV={pls_window.num_components} |'
+                      f' PC#={pls_window.num_components} |'
                       f' Test/Train={pls_window.train_test_ratio}')
         ax1.set_xlabel('True Values')
         ax1.set_ylabel('Predicted Values')
-        # ax1.legend(loc='best')
+        ax1.legend(loc='lower right')
         ax1.grid(True, alpha=0.3)
         ax1.xaxis.set_major_locator(plt.MaxNLocator(6))
 
@@ -639,7 +686,7 @@ class MyChemometrix:
         ax2 = self.fig2.add_subplot(111)
         ax2.plot(pls_window.components_range, pls_window.rmse_scores, marker='o')
         ax2.plot(pls_window.components_range[min_rmse_index], pls_window.rmse_scores[min_rmse_index],
-                 'P', ms=10, mfc='red',
+                 'P', ms=6, mfc='red',
                  label=f'Optimized Number of Components={pls_window.components_range[min_rmse_index]}')
         ax2.set_xlabel('Number of Components')
         ax2.set_ylabel('RMSE')
