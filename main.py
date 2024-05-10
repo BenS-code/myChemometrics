@@ -147,7 +147,7 @@ class PLS:
         self.y_pred_train = None
         self.y_pred_cv = None
         self.y_pred_test = None
-        self.num_components = []
+        self.num_components = None
         self.r2_train = None
         self.r2_cv = None
         self.r2_test = None
@@ -209,26 +209,26 @@ class PLS:
         if self.num_components > self.df_X.shape[1]:
             self.num_components = self.df_X.shape[1]
 
-        self.components_range = range(1, 21)
+        self.components_range = range(1, 20)
         if max(self.components_range) > self.df_X.shape[1]:
             self.components_range = range(1, self.df_X.shape[1])
 
-        # Iterate over different numbers of components
-        for n_components in self.components_range:
-            # Train the PLS model
-            pls = PLSRegression(n_components=n_components)
-            pls.fit(self.x_train, self.y_train)
-
-            # Cross-validation
-            y_cv = cross_val_predict(pls, self.x_train, self.y_train, cv=10)
-
-            # Calculate RMSE and append to the list
-            rmse = np.sqrt(mean_squared_error(self.y_train, y_cv))
-            self.rmse_scores.append(rmse)
-
-            # Calculate R2 score and append to the list
-            r2 = r2_score(self.y_train, y_cv)
-            self.r2_scores.append(r2)
+        # # Iterate over different numbers of components
+        # for n_components in self.components_range:
+        #     # Train the PLS model
+        #     pls = PLSRegression(n_components=n_components)
+        #     pls.fit(self.x_train, self.y_train)
+        #
+        #     # Cross-validation
+        #     y_cv = cross_val_predict(pls, self.x_train, self.y_train, cv=10)
+        #
+        #     # Calculate RMSE and append to the list
+        #     rmse = np.sqrt(mean_squared_error(self.y_train, y_cv))
+        #     self.rmse_scores.append(rmse)
+        #
+        #     # Calculate R2 score and append to the list
+        #     r2 = r2_score(self.y_train, y_cv)
+        #     self.r2_scores.append(r2)
 
         # Initialize PLS model with desired number of components
         self.pls = PLSRegression(n_components=self.num_components)
@@ -585,6 +585,9 @@ class MyChemometrix:
 
     def filter_data(self):
 
+        self.select_y_button["state"] = "disabled"
+        self.select_x_button["state"] = "disabled"
+
         filter_window = FilterData(self.master, self.df_X, self.df_y)
 
         self.master.wait_window(filter_window.window)
@@ -601,7 +604,7 @@ class MyChemometrix:
         """
         temp_input = self.df_X
         for i in range(temp_input.shape[0]):
-            temp_input.iloc[i, :] -= temp_input.iloc[i, :].mean()
+            temp_input.loc[i, :] -= temp_input.loc[i, :].mean()
 
         ref = np.mean(temp_input, axis=0)
 
@@ -665,10 +668,8 @@ class MyChemometrix:
         ax1.scatter(pls_window.y_test, pls_window.y_pred_test,
                     color='red', s=6,
                     label='Tested')
-        # ax1.plot(np.polyval(z, pls_window.y_pred_train), pls_window.y_train,
-        #          color='b', linewidth=1, linestyle='--', label='Model Line')
-        # ax1.plot(pls_window.y_train, pls_window.y_train,
-        #          color='r', linewidth=1, linestyle='--', label='Ideal Line')
+        ax1.plot(pls_window.y_train, pls_window.y_train,
+                 color='k', linewidth=1, linestyle='--', label='Ideal Line')
         ax1.set_title(f'Predicted vs True Results - Label={pls_window.selected_label} |'
                       f' PC#={pls_window.num_components} |'
                       f' Test/Train={pls_window.train_test_ratio}')
@@ -681,17 +682,25 @@ class MyChemometrix:
         self.fig2.clear()
 
         # Find the index of the minimum RMSE score
-        min_rmse_index = np.argmin(pls_window.rmse_scores)
+        # min_rmse_index = np.argmin(pls_window.rmse_scores)
+        #
+        # ax2 = self.fig2.add_subplot(111)
+        # ax2.plot(pls_window.components_range, pls_window.rmse_scores, marker='o')
+        # ax2.plot(pls_window.components_range[min_rmse_index], pls_window.rmse_scores[min_rmse_index],
+        #          'P', ms=6, mfc='red',
+        #          label=f'Optimized Number of Components={pls_window.components_range[min_rmse_index]}')
+        # ax2.set_xlabel('Number of Components')
+        # ax2.set_ylabel('RMSE')
+        # ax2.set_title('RMSE vs Number of Components')
+        # ax2.legend(loc='best')
+        # ax2.grid(True)
 
         ax2 = self.fig2.add_subplot(111)
-        ax2.plot(pls_window.components_range, pls_window.rmse_scores, marker='o')
-        ax2.plot(pls_window.components_range[min_rmse_index], pls_window.rmse_scores[min_rmse_index],
-                 'P', ms=6, mfc='red',
-                 label=f'Optimized Number of Components={pls_window.components_range[min_rmse_index]}')
-        ax2.set_xlabel('Number of Components')
-        ax2.set_ylabel('RMSE')
-        ax2.set_title('RMSE vs Number of Components')
-        ax2.legend(loc='best')
+        ax2.plot(self.df_X.columns, pls_window.pls.x_loadings_[:, pls_window.num_components-1])
+        ax2.set_xlabel('X columns')
+        ax2.set_ylabel('X Loadings')
+        ax2.set_title('PLS Coefficients')
+        # ax2.legend(loc='best')
         ax2.grid(True)
 
         self.fig3.clear()
