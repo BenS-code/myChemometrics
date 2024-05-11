@@ -4,6 +4,7 @@ from tkinter import ttk, filedialog, END
 import pandas as pd
 import numpy as np
 from scipy.spatial.distance import cdist
+from scipy.stats import f
 from matplotlib import pyplot as plt
 from sklearn.cross_decomposition import PLSRegression
 from sklearn.model_selection import train_test_split, cross_val_predict
@@ -106,6 +107,7 @@ class FilterData:
         self.is_drop_empty_on = self.drop_empty_var.get()
         self.x_threshold = float(self.x_std_num_entry.get())
         self.y_threshold = float(self.y_std_num_entry.get())
+        print(self.is_drop_empty_on)
 
         dissimilarities = cdist(self.df_temp[self.selected_x_columns], self.df_temp[self.selected_x_columns],
                                 metric="correlation")
@@ -133,7 +135,16 @@ class FilterData:
 class PLS:
     def __init__(self, parent, df_X, df_y):
 
-        self.components_range = None
+        self.rmse_test_opt = None
+        self.rmse_cv_opt = None
+        self.rmse_train_opt = None
+        self.r2_test_opt = None
+        self.r2_cv_opt = None
+        self.r2_train_opt = None
+        self.y_pred_test_opt = None
+        self.y_pred_cv_opt = None
+        self.y_pred_train_opt = None
+        self.pls_opt = None
         self.train_test_ratio = None
         self.selected_label = None
         self.top_left_plot = None
@@ -209,27 +220,6 @@ class PLS:
         if self.num_components > self.df_X.shape[1]:
             self.num_components = self.df_X.shape[1]
 
-        self.components_range = range(1, 20)
-        if max(self.components_range) > self.df_X.shape[1]:
-            self.components_range = range(1, self.df_X.shape[1])
-
-        # # Iterate over different numbers of components
-        # for n_components in self.components_range:
-        #     # Train the PLS model
-        #     pls = PLSRegression(n_components=n_components)
-        #     pls.fit(self.x_train, self.y_train)
-        #
-        #     # Cross-validation
-        #     y_cv = cross_val_predict(pls, self.x_train, self.y_train, cv=10)
-        #
-        #     # Calculate RMSE and append to the list
-        #     rmse = np.sqrt(mean_squared_error(self.y_train, y_cv))
-        #     self.rmse_scores.append(rmse)
-        #
-        #     # Calculate R2 score and append to the list
-        #     r2 = r2_score(self.y_train, y_cv)
-        #     self.r2_scores.append(r2)
-
         # Initialize PLS model with desired number of components
         self.pls = PLSRegression(n_components=self.num_components)
 
@@ -254,6 +244,175 @@ class PLS:
         self.rmse_test = np.sqrt(mean_squared_error(self.y_test, self.y_pred_test))
 
         self.window.destroy()
+
+
+class PLS_optimize:
+    def __init__(self, parent, df_X, df_y):
+        self.rmse_test_opt = None
+        self.rmse_cv_opt = None
+        self.rmse_train_opt = None
+        self.r2_test_opt = None
+        self.r2_cv_opt = None
+        self.r2_train_opt = None
+        self.y_pred_test_opt = None
+        self.y_pred_cv_opt = None
+        self.y_pred_train_opt = None
+        self.pls_opt = None
+        self.components_range = None
+        self.train_test_ratio = None
+        self.selected_label = None
+        self.top_left_plot = None
+        self.parent = parent
+        self.df_X = df_X
+        self.df_y = df_y
+        self.x_train = []
+        self.y_train = []
+        self.x_test = []
+        self.y_test = []
+        self.y_pred_train = None
+        self.y_pred_cv = None
+        self.y_pred_test = None
+        self.num_components = None
+        self.r2_train = None
+        self.r2_cv = None
+        self.r2_test = None
+        self.rmse_train = None
+        self.rmse_test = None
+        self.rmse_cv = None
+        self.pls = None
+        self.rmse_scores = []
+        self.r2_scores = []
+
+        self.window = tk.Toplevel(parent)
+        self.window.title("PLS Optimization Options")
+        # self.window.geometry("360x200")
+
+        # ComboBox for selecting label
+        self.select_label_label = ttk.Label(self.window, text="Select Label:")
+        self.select_label_label.grid(row=0, column=0, padx=5, pady=5, sticky='ew')
+
+        self.select_label_combobox = ttk.Combobox(self.window, values=self.df_y.columns.tolist())
+        self.select_label_combobox.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
+        self.select_label_combobox.current(0)
+
+        self.train_test_ratio_label = ttk.Label(self.window, text="Test/Train ratio (0-0.5):")
+        self.train_test_ratio_label.grid(row=1, column=0, padx=5, pady=5, sticky='ew')
+
+        self.train_test_ratio_entry = ttk.Entry(self.window)
+        self.train_test_ratio_entry.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
+        self.train_test_ratio_entry.insert(tk.END, "0.1")
+
+        # Label and entry for number of components
+        self.num_components_label = ttk.Label(self.window, text="Number of Components:")
+        self.num_components_label.grid(row=2, column=0, padx=5, pady=5, sticky='ew')
+
+        self.num_components_entry = ttk.Entry(self.window)
+        self.num_components_entry.grid(row=2, column=1, padx=5, pady=5, sticky='ew')
+        self.num_components_entry.insert(tk.END, "2")
+
+        # Label and entry for number of components
+        self.num_outliers_label = ttk.Label(self.window, text="Number of Outliers to Remove:")
+        self.num_outliers_label.grid(row=3, column=0, padx=5, pady=5, sticky='ew')
+
+        self.num_outliers_entry = ttk.Entry(self.window)
+        self.num_outliers_entry.grid(row=3, column=1, padx=5, pady=5, sticky='ew')
+        self.num_outliers_entry.insert(tk.END, "20")
+
+        # Label and entry for number of components
+        self.confidence_label = ttk.Label(self.window, text="Confidence Level (0.5-0.99):")
+        self.confidence_label.grid(row=4, column=0, padx=5, pady=5, sticky='ew')
+
+        self.confidence_entry = ttk.Entry(self.window)
+        self.confidence_entry.grid(row=4, column=1, padx=5, pady=5, sticky='ew')
+        self.confidence_entry.insert(tk.END, "0.95")
+
+        # outliers removal button
+        self.outliers_button = ttk.Button(self.window, text="Remove Outliers", command=self.outlier_removal)
+        self.outliers_button.grid(row=5, column=0, padx=5, pady=5)
+
+        # Apply and Cancel buttons
+        self.opt_pc_button = ttk.Button(self.window, text="Optimize PC", command=self.optimize_pls_comp)
+        self.opt_pc_button.grid(row=2, column=2, padx=5, pady=5)
+
+        self.cancel_button = ttk.Button(self.window, text="Cancel", command=self.window.destroy)
+        self.cancel_button.grid(row=5, column=1, padx=5, pady=5)
+
+    def outlier_removal(self):
+        pass
+
+    def optimize_pls_comp(self):
+
+        self.num_components = int(self.num_components_entry.get())
+        self.selected_label = self.select_label_combobox.get()
+        self.train_test_ratio = float(self.train_test_ratio_entry.get())
+        if self.train_test_ratio < 0.001:
+            self.train_test_ratio = 0.001
+        if self.train_test_ratio > 0.5:
+            self.train_test_ratio = 0.5
+
+        # Split data into train and test sets
+        self.x_train, self.x_test, self.y_train, self.y_test = \
+            train_test_split(self.df_X, self.df_y[self.select_label_combobox.get()],
+                             test_size=self.train_test_ratio)
+
+        if self.num_components > self.df_X.shape[1]:
+            self.num_components = self.df_X.shape[1]
+
+        self.components_range = range(1, 20)
+        if max(self.components_range) > self.df_X.shape[1]:
+            self.components_range = range(1, self.df_X.shape[1])
+
+        # Iterate over different numbers of components
+        for n_components in self.components_range:
+            # Train the PLS model
+            pls = PLSRegression(n_components=n_components)
+            pls.fit(self.x_train, self.y_train)
+
+            # Cross-validation
+            y_cv = cross_val_predict(pls, self.x_train, self.y_train, cv=10)
+
+            # Calculate RMSE and append to the list
+            rmse = np.sqrt(mean_squared_error(self.y_train, y_cv))
+            self.rmse_scores.append(rmse)
+
+            # Calculate R2 score and append to the list
+            r2 = r2_score(self.y_train, y_cv)
+            self.r2_scores.append(r2)
+
+        # Calculate and print the position of minimum in RMSE
+        rmsemin = np.argmin(self.rmse_scores)
+
+        print(rmsemin)
+
+        self.num_components_entry.delete(0, tk.END)
+        self.num_components_entry.insert(tk.END, rmsemin+1)
+
+        # # Define PLS object with optimal number of components
+        # self.pls_opt = PLSRegression(n_components=rmsemin + 1)
+        #
+        # # Fir to the entire dataset
+        # self.pls_opt.fit(self.x_train, self.y_train)
+        #
+        # self.y_pred_train_opt = self.pls_opt.predict(self.x_train)
+        #
+        # # Cross-validation
+        # self.y_pred_cv_opt = cross_val_predict(self.pls_opt, self.x_train, self.y_train, cv=10)
+        #
+        # self.y_pred_test_opt = self.pls_opt.predict(self.x_test)
+        #
+        # # Calculate scores for calibration and cross-validation
+        # self.r2_train_opt = r2_score(self.y_train, self.y_pred_train_opt)
+        # self.r2_cv_opt = r2_score(self.y_train, self.y_pred_cv_opt)
+        # self.r2_test_opt = r2_score(self.y_train, self.y_pred_test_opt)
+        #
+        # # Calculate mean squared error for calibration and cross validation
+        # self.rmse_train_opt = np.sqrt(mean_squared_error(self.y_train, self.y_pred_train_opt))
+        # self.rmse_cv_opt = np.sqrt(mean_squared_error(self.y_train, self.y_pred_cv_opt))
+        # self.rmse_test_opt = np.sqrt(mean_squared_error(self.y_train, self.y_pred_test_opt))
+
+        # # Plot regression and figures of merit
+        # rangey = max(y) - min(y)
+        # rangex = max(y_c) - min(y_c)
 
 
 class MyChemometrix:
@@ -451,7 +610,8 @@ class MyChemometrix:
                                      command=self.open_pls_window)
         self.pls_button.pack(side="left", fill="both", padx=5, pady=5)
 
-        self.optimize_button = ttk.Button(self.regression_buttons_frame, text="Optimize", state="disabled")
+        self.optimize_button = ttk.Button(self.regression_buttons_frame, text="Optimize", state="disabled",
+                                          command=self.optimize_pls_window)
         self.optimize_button.pack(side="left", fill="both", padx=5, pady=5)
 
         self.pca_button = ttk.Button(self.classifier_buttons_frame, text="PCA", state="disabled")
@@ -662,11 +822,11 @@ class MyChemometrix:
         legend_table.scale(0.4, 1.2)  # Adjust the size of the legend table
 
         ax1.scatter(pls_window.y_train, pls_window.y_pred_train,
-                    color='blue', s=6, label="Trained")
+                    color='blue', s=10, label="Trained")
         ax1.scatter(pls_window.y_train, pls_window.y_pred_cv,
-                    color='green', s=2, label="CV")
+                    color='green', s=3, label="CV")
         ax1.scatter(pls_window.y_test, pls_window.y_pred_test,
-                    color='red', s=6,
+                    color='red', s=10,
                     label='Tested')
         ax1.plot(pls_window.y_train, pls_window.y_train,
                  color='k', linewidth=1, linestyle='--', label='Ideal Line')
@@ -681,25 +841,11 @@ class MyChemometrix:
 
         self.fig2.clear()
 
-        # Find the index of the minimum RMSE score
-        # min_rmse_index = np.argmin(pls_window.rmse_scores)
-        #
-        # ax2 = self.fig2.add_subplot(111)
-        # ax2.plot(pls_window.components_range, pls_window.rmse_scores, marker='o')
-        # ax2.plot(pls_window.components_range[min_rmse_index], pls_window.rmse_scores[min_rmse_index],
-        #          'P', ms=6, mfc='red',
-        #          label=f'Optimized Number of Components={pls_window.components_range[min_rmse_index]}')
-        # ax2.set_xlabel('Number of Components')
-        # ax2.set_ylabel('RMSE')
-        # ax2.set_title('RMSE vs Number of Components')
-        # ax2.legend(loc='best')
-        # ax2.grid(True)
-
         ax2 = self.fig2.add_subplot(111)
-        ax2.plot(self.df_X.columns, pls_window.pls.x_loadings_[:, pls_window.num_components-1])
+        ax2.plot(self.df_X.columns, pls_window.pls.x_loadings_[:, pls_window.num_components - 1])
         ax2.set_xlabel('X columns')
         ax2.set_ylabel('X Loadings')
-        ax2.set_title('PLS Coefficients')
+        ax2.set_title('PLS Weights')
         # ax2.legend(loc='best')
         ax2.grid(True)
 
@@ -732,6 +878,27 @@ class MyChemometrix:
         self.top_right_plot.draw()
         self.bottom_left_plot.draw()
         self.bottom_right_plot.draw()
+
+    def optimize_pls_window(self):
+
+        pls_opt_window = PLS_optimize(self.master, self.df_X,
+                                      self.df_y)
+
+        self.master.wait_window(pls_opt_window.window)
+
+        # Find the index of the minimum RMSE score
+        # min_rmse_index = np.argmin(pls_window.rmse_scores)
+        #
+        # ax2 = self.fig2.add_subplot(111)
+        # ax2.plot(pls_window.components_range, pls_window.rmse_scores, marker='o')
+        # ax2.plot(pls_window.components_range[min_rmse_index], pls_window.rmse_scores[min_rmse_index],
+        #          'P', ms=6, mfc='red',
+        #          label=f'Optimized Number of Components={pls_window.components_range[min_rmse_index]}')
+        # ax2.set_xlabel('Number of Components')
+        # ax2.set_ylabel('RMSE')
+        # ax2.set_title('RMSE vs Number of Components')
+        # ax2.legend(loc='best')
+        # ax2.grid(True)
 
 
 def main():
