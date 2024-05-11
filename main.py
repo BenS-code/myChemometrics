@@ -56,7 +56,6 @@ class SelectColumnsWindow:
 
 class FilterData:
     def __init__(self, parent, df_X, df_y):
-        self.is_drop_empty_on = None
         self.x_threshold = 3.0
         self.y_threshold = 3.0
         self.df_X = df_X
@@ -68,11 +67,7 @@ class FilterData:
 
         self.window = tk.Toplevel(parent)
         self.window.title("Filter Data")
-        self.window.geometry("500x200")
-
-        # Variable to hold the state of the checkbox
-        self.drop_empty_var = tk.BooleanVar()
-        self.drop_empty_var.set(True)
+        # self.window.geometry("500x200")
 
         ttk.Label(self.window,
                   text="Remove above \nthreshold (# STD):").grid(row=1, column=0, padx=5, pady=10, sticky='ew')
@@ -92,10 +87,6 @@ class FilterData:
         self.y_std_num_entry.grid(row=1, column=2, padx=5, pady=10, sticky='ew')
         self.y_std_num_entry.insert(tk.END, "3")
 
-        self.drop_empty_checkbox = tk.Checkbutton(self.window, variable=self.drop_empty_var,
-                                                  text=" Remove rows with\n empty cells")
-        self.drop_empty_checkbox.grid(row=2, column=0, padx=5, pady=5, sticky='ew')
-
         self.filter_button = ttk.Button(self.window, text="Filter", command=self.filter_raw_data)
         self.filter_button.grid(row=3, column=0, padx=5, pady=10, sticky='ew')
 
@@ -104,10 +95,8 @@ class FilterData:
 
     def filter_raw_data(self):
 
-        self.is_drop_empty_on = self.drop_empty_var.get()
         self.x_threshold = float(self.x_std_num_entry.get())
         self.y_threshold = float(self.y_std_num_entry.get())
-        print(self.is_drop_empty_on)
 
         dissimilarities = cdist(self.df_temp[self.selected_x_columns], self.df_temp[self.selected_x_columns],
                                 metric="correlation")
@@ -124,9 +113,7 @@ class FilterData:
             std = self.df_temp[col].std()
             self.df_temp = self.df_temp[(self.df_temp[col] - mean).abs() <= (self.y_threshold * std)]
 
-        if self.is_drop_empty_on:
-            self.df_temp = self.df_temp.dropna()
-
+        self.df_temp = self.df_temp.dropna()
         self.df_temp = self.df_temp.reset_index()
 
         self.window.destroy()
@@ -246,7 +233,7 @@ class PLS:
         self.window.destroy()
 
 
-class PLS_optimize:
+class PLSOptimize:
     def __init__(self, parent, df_X, df_y):
         self.rmse_test_opt = None
         self.rmse_cv_opt = None
@@ -382,10 +369,8 @@ class PLS_optimize:
         # Calculate and print the position of minimum in RMSE
         rmsemin = np.argmin(self.rmse_scores)
 
-        print(rmsemin)
-
         self.num_components_entry.delete(0, tk.END)
-        self.num_components_entry.insert(tk.END, rmsemin+1)
+        self.num_components_entry.insert(tk.END, rmsemin + 1)
 
         # # Define PLS object with optimal number of components
         # self.pls_opt = PLSRegression(n_components=rmsemin + 1)
@@ -590,9 +575,9 @@ class MyChemometrix:
                                           command=self.open_select_features_window)
         self.select_x_button.pack(side="left", fill="both", padx=5, pady=5)
 
-        self.display_raw_data_button = ttk.Button(self.data_buttons_frame, text="Display Data", state="disabled",
-                                                  command=self.display_raw)
-        self.display_raw_data_button.pack(side="left", fill="both", padx=5, pady=5)
+        self.display_data_button = ttk.Button(self.data_buttons_frame, text="Display Data", state="disabled",
+                                                  command=self.display_xy)
+        self.display_data_button.pack(side="left", fill="both", padx=5, pady=5)
 
         self.filter_data_button = ttk.Button(self.preprocessing_buttons_frame, text="Filter Data", state="disabled",
                                              command=self.filter_data)
@@ -683,7 +668,7 @@ class MyChemometrix:
             self.select_y_button["state"] = "normal"
             self.select_x_button["state"] = "normal"
             if self.df_X is not None and self.df_y is not None:
-                self.display_raw_data_button["state"] = "normal"
+                self.display_data_button["state"] = "normal"
                 self.filter_data_button["state"] = "normal"
                 self.msc_button["state"] = "normal"
                 self.snv_button["state"] = "normal"
@@ -692,7 +677,7 @@ class MyChemometrix:
                 self.pca_button["state"] = "normal"
                 self.LDA_button["state"] = "normal"
 
-    def display_raw(self):
+    def display_xy(self):
         self.fig1.clear()
         self.fig2.clear()
         self.fig3.clear()
@@ -814,7 +799,7 @@ class MyChemometrix:
                                  colLabels=['', 'RMSE', 'R-Square'],
                                  loc='upper left',
                                  cellLoc='center',
-                                 cellColours=[['w', 'b', 'b'], ['w', 'g', 'g'], ['w', 'r', 'r']])
+                                 cellColours=[['w', 'b', 'b'], ['w', 'r', 'r'], ['w', 'g', 'g']])
 
         # Styling the legend table
         legend_table.auto_set_font_size(False)
@@ -822,17 +807,17 @@ class MyChemometrix:
         legend_table.scale(0.4, 1.2)  # Adjust the size of the legend table
 
         ax1.scatter(pls_window.y_train, pls_window.y_pred_train,
-                    color='blue', s=10, label="Trained")
+                    color='blue', s=20, label="Train")
         ax1.scatter(pls_window.y_train, pls_window.y_pred_cv,
-                    color='green', s=3, label="CV")
+                    color='red', s=6, label="CV")
         ax1.scatter(pls_window.y_test, pls_window.y_pred_test,
-                    color='red', s=10,
-                    label='Tested')
+                    color='green', s=6,
+                    label='Test')
         ax1.plot(pls_window.y_train, pls_window.y_train,
                  color='k', linewidth=1, linestyle='--', label='Ideal Line')
         ax1.set_title(f'Predicted vs True Results - Label={pls_window.selected_label} |'
                       f' PC#={pls_window.num_components} |'
-                      f' Test/Train={pls_window.train_test_ratio}')
+                      f' Test/Train={pls_window.train_test_ratio * 100}%')
         ax1.set_xlabel('True Values')
         ax1.set_ylabel('Predicted Values')
         ax1.legend(loc='lower right')
@@ -847,7 +832,8 @@ class MyChemometrix:
         ax2.set_ylabel('X Loadings')
         ax2.set_title('PLS Weights')
         # ax2.legend(loc='best')
-        ax2.grid(True)
+        ax2.grid(True, alpha=0.3)
+        ax2.xaxis.set_major_locator(plt.MaxNLocator(6))
 
         self.fig3.clear()
 
@@ -855,24 +841,28 @@ class MyChemometrix:
         y_scores = pls_window.pls.y_scores_
 
         ax3 = self.fig3.add_subplot(111)
-        ax3.plot(x_scores[:, 0], x_scores[:, 1], 'ob', label="X scores")
-        ax3.plot(y_scores[:, 0], y_scores[:, 1], 'or', label='y scores')
+        ax3.plot(x_scores[:, 0], x_scores[:, 1], 'ob', ms=4, label="X scores")
+        ax3.plot(y_scores[:, 0], y_scores[:, 1], 'or', ms=4, label='y scores')
 
         ax3.set_xlabel('Component 1')
         ax3.set_ylabel('Component 2')
         ax3.set_title('Scores Plot')
-        ax3.grid(True)
+        ax3.legend(loc='best')
+        ax3.grid(True, alpha=0.3)
+        ax3.xaxis.set_major_locator(plt.MaxNLocator(6))
 
         self.fig4.clear()
 
         x_loadings = pls_window.pls.x_loadings_
         y_loadings = pls_window.pls.y_loadings_
         ax4 = self.fig4.add_subplot(111)
-        ax4.plot(x_loadings[:, 0], x_loadings[:, 1], 'ob')
-        ax4.plot(y_loadings[:, 0], y_loadings[:, 1], 'or')
+        ax4.plot(x_loadings[:, 0], x_loadings[:, 1], 'ob', ms=4, label='X loadings')
+        ax4.plot(y_loadings[:, 0], y_loadings[:, 1], 'or', ms=4, label='y loadings')
         ax4.set_xlabel('Component 1')
         ax4.set_ylabel('Component 2')
         ax4.set_title('Loadings Plot')
+        ax4.legend(loc='best')
+        ax4.grid(True, alpha=0.3)
 
         self.top_left_plot.draw()
         self.top_right_plot.draw()
@@ -881,8 +871,8 @@ class MyChemometrix:
 
     def optimize_pls_window(self):
 
-        pls_opt_window = PLS_optimize(self.master, self.df_X,
-                                      self.df_y)
+        pls_opt_window = PLSOptimize(self.master, self.df_X,
+                                     self.df_y)
 
         self.master.wait_window(pls_opt_window.window)
 
