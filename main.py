@@ -1,4 +1,5 @@
 import _tkinter
+import os
 import tkinter as tk
 from tkinter import ttk, filedialog
 import pandas as pd
@@ -521,12 +522,12 @@ class MyChemometrix:
 
         # Styles
         self.style = ttk.Style()
-        self.style.theme_use("alt")
+        self.style.theme_use("Breeze")
 
-        self.style.configure("TFrame", background="#F0F0F0")
-        self.style.configure("TLabelFrame", background="#F0F0F0")
-        self.style.configure("TButton", background="#4CAF50", foreground="black", font=("Arial", 10), padding=5)
-        self.style.map("TButton", background=[("active", "#45A049")])
+        # self.style.configure("TFrame", background="#F0F0F0")
+        # self.style.configure("TLabelFrame", background="#F0F0F0")
+        self.style.configure("TButton", background="light blue", foreground="black", padding=5)
+        self.style.map("TButton", background=[("active", "light sky blue")])
 
         # Frames
         self.buttons_frame = ttk.Frame(master, height=buttons_frame_height)
@@ -551,7 +552,7 @@ class MyChemometrix:
         self.fig3 = plt.Figure(figsize=(5, 5), dpi=100)
         self.fig4 = plt.Figure(figsize=(5, 5), dpi=100)
         # Canvas areas in the graphs_frame
-        self.top_left_canvas = tk.Canvas(self.graphs_frame, bg="white",
+        self.top_left_canvas = tk.Canvas(self.graphs_frame, 
                                          width=graphs_frame_width // 2, height=screen_height // 2)
         self.top_left_canvas.grid(row=0, column=0, sticky="nsew")
 
@@ -561,7 +562,7 @@ class MyChemometrix:
         self.top_left_plot.get_tk_widget().config(highlightthickness=1, highlightbackground="black")
         self.top_left_plot.draw()
 
-        self.top_right_canvas = tk.Canvas(self.graphs_frame, bg="white",
+        self.top_right_canvas = tk.Canvas(self.graphs_frame, 
                                           width=graphs_frame_width // 2, height=screen_height // 2)
         self.top_right_canvas.grid(row=0, column=1, sticky="nsew")
 
@@ -570,7 +571,7 @@ class MyChemometrix:
         self.top_right_plot.get_tk_widget().config(highlightthickness=1, highlightbackground="black")
         self.top_right_plot.draw()
 
-        self.bottom_left_canvas = tk.Canvas(self.graphs_frame, bg="white",
+        self.bottom_left_canvas = tk.Canvas(self.graphs_frame, 
                                             width=graphs_frame_width // 2, height=screen_height // 2)
         self.bottom_left_canvas.grid(row=1, column=0, sticky="nsew")
 
@@ -579,7 +580,7 @@ class MyChemometrix:
         self.bottom_left_plot.get_tk_widget().config(highlightthickness=1, highlightbackground="black")
         self.bottom_left_plot.draw()
 
-        self.bottom_right_canvas = tk.Canvas(self.graphs_frame, bg="white",
+        self.bottom_right_canvas = tk.Canvas(self.graphs_frame, 
                                              width=graphs_frame_width // 2, height=screen_height // 2)
         self.bottom_right_canvas.grid(row=1, column=1, sticky="nsew")
 
@@ -1111,8 +1112,6 @@ class MyChemometrix:
         ax2.set_xlim(0.5, 10.5)
         ax2.xaxis.set_major_locator(plt.MaxNLocator(6))
 
-        # for i in range(self.df_X.shape[1]):
-        #     ax3.scatter(classification_window.ccircle[i][0], classification_window.ccircle[i][1], c=self.df_X.columns)
         cmap = plt.get_cmap('viridis')
         for i, j in enumerate(classification_window.eucl_dist):
             arrow_col = (classification_window.eucl_dist[i] - np.array(classification_window.eucl_dist).min()) / (
@@ -1163,6 +1162,13 @@ class MyChemometrix:
 
 def main():
     root = tk.Tk()
+
+    # Import the tcl file with the tk.call method
+    # root.tk.call('source', os.getcwd() + '/Styles/Azure-ttk-theme/azure.tcl')
+    root.tk.call('source', os.getcwd() + '/Styles/ttk-Breeze/breeze.tcl')
+    # root.tk.call('source', os.getcwd() + '/Styles/Forest-ttk-theme/forest-light.tcl')
+    # root.tk.call('source', os.getcwd() + '/Styles/Forest-ttk-theme/forest-dark.tcl')
+
     app = MyChemometrix(root)
     root.mainloop()
 
