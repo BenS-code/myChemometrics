@@ -1085,7 +1085,8 @@ class MyChemometrix:
         ax3 = self.fig3.add_subplot(111)
         ax4 = self.fig4.add_subplot(111)
 
-        scatter = ax1.scatter(classification_window.x_pca[:, 0], classification_window.x_pca[:, 1], c=self.df_y.values)
+        scatter = ax1.scatter(classification_window.x_pca[:, 0], classification_window.x_pca[:, 1],
+                              c=self.df_y[classification_window.selected_label].values)
         ax1.set_title('PCA')
         ax1.set_xlabel('PC1')
         ax1.set_ylabel('PC2')
