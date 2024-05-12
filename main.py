@@ -1,6 +1,6 @@
 import _tkinter
 import tkinter as tk
-from tkinter import ttk, filedialog, END
+from tkinter import ttk, filedialog
 import pandas as pd
 import numpy as np
 from scipy.spatial.distance import cdist
@@ -48,7 +48,7 @@ class SelectColumnsWindow:
         self.cancel_button.pack(side=tk.RIGHT, padx=5, pady=5)
 
     def select_all(self):
-        self.listbox.select_set(0, END)
+        self.listbox.select_set(0, tk.END)
 
     def select_columns(self):
         selected_indices = self.listbox.curselection()
