@@ -5,12 +5,12 @@ from tkinter import ttk, filedialog
 import pandas as pd
 import numpy as np
 from scipy.spatial.distance import cdist
-from scipy.stats import f
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from matplotlib import pyplot as plt
 from sklearn.cross_decomposition import PLSRegression
 from sklearn.decomposition import PCA
 from sklearn.model_selection import train_test_split, cross_val_predict
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, KBinsDiscretizer
 from sklearn.metrics import r2_score, mean_squared_error
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.patches import Circle
@@ -42,7 +42,7 @@ class SelectColumnsWindow:
         self.select_button = ttk.Button(self.window, text="Select", command=self.select_columns)
         self.select_button.pack(side=tk.LEFT, padx=5, pady=5)
 
-        self.select_all_button = ttk.Button(self.window, text="Select All", command=self.select_all)
+        self.select_all_button = ttk.Button(self.window, text="Mark All", command=self.select_all)
         self.select_all_button.pack(side=tk.LEFT, padx=5, pady=5)
 
         self.cancel_button = ttk.Button(self.window, text="Cancel", command=self.window.destroy)
@@ -321,7 +321,7 @@ class PLSOptimize:
         self.outliers_button.grid(row=5, column=0, padx=5, pady=5)
 
         # Apply and Cancel buttons
-        self.opt_pc_button = ttk.Button(self.window, text="Optimize PC", command=self.optimize_pls_comp)
+        self.opt_pc_button = ttk.Button(self.window, text="Optimize PCs", command=self.optimize_pls_comp)
         self.opt_pc_button.grid(row=2, column=2, padx=5, pady=5)
 
         self.cancel_button = ttk.Button(self.window, text="Cancel", command=self.window.destroy)
@@ -404,99 +404,104 @@ class PLSOptimize:
 
 
 class Classification:
-    def __init__(self, parent, df_X, df_y):
+    def __init__(self, parent, df_X, df_y, class_type):
+        self.y_binned = None
+        self.x_lda = None
+        self.lda = None
+        self.selected_label = None
+        self.class_type = class_type
+        self.x_pc = 0
+        self.y_pc = 1
         self.eucl_dist = []
         self.ccircle = []
         self.explained_variance_ratio = None
         self.x_pca = None
         self.pca = None
-        self.rmse_test_opt = None
-        self.rmse_cv_opt = None
-        self.rmse_train_opt = None
-        self.r2_test_opt = None
-        self.r2_cv_opt = None
-        self.r2_train_opt = None
-        self.y_pred_test_opt = None
-        self.y_pred_cv_opt = None
-        self.y_pred_train_opt = None
-        self.pls_opt = None
-        self.train_test_ratio = None
-        self.selected_label = None
-        self.top_left_plot = None
         self.parent = parent
         self.df_X = df_X
         self.df_y = df_y
-        self.x_train = []
-        self.y_train = []
-        self.x_test = []
-        self.y_test = []
-        self.y_pred_train = None
-        self.y_pred_cv = None
-        self.y_pred_test = None
         self.num_components = None
-        self.r2_train = None
-        self.r2_cv = None
-        self.r2_test = None
-        self.rmse_train = None
-        self.rmse_test = None
-        self.rmse_cv = None
-        self.pls = None
-        self.rmse_scores = []
-        self.r2_scores = []
 
         self.window = tk.Toplevel(parent)
         self.window.title("Classification Options")
         # self.window.geometry("360x200")
 
         # Label and entry for number of components
-        self.num_components_label = ttk.Label(self.window, text="Number of Components:")
-        self.num_components_label.grid(row=0, column=0, padx=5, pady=5, sticky='ew')
+        self.x_pc_label = ttk.Label(self.window, text="x axis component:")
+        self.x_pc_label.grid(row=0, column=0, padx=5, pady=5, sticky='ew')
 
-        self.num_components_entry = ttk.Entry(self.window)
-        self.num_components_entry.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
-        self.num_components_entry.insert(tk.END, "2")
+        self.x_pc_entry = ttk.Entry(self.window)
+        self.x_pc_entry.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
+        self.x_pc_entry.insert(tk.END, "1")
+
+        # Label and entry for number of components
+        self.y_pc_label = ttk.Label(self.window, text="y axis component:")
+        self.y_pc_label.grid(row=1, column=0, padx=5, pady=5, sticky='ew')
+
+        self.y_pc_entry = ttk.Entry(self.window)
+        self.y_pc_entry.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
+        self.y_pc_entry.insert(tk.END, "2")
 
         # ComboBox for selecting label
         self.select_label_label = ttk.Label(self.window, text="Select Label:")
-        self.select_label_label.grid(row=1, column=0, padx=5, pady=5, sticky='ew')
+        self.select_label_label.grid(row=2, column=0, padx=5, pady=5, sticky='ew')
 
         self.select_label_combobox = ttk.Combobox(self.window, values=self.df_y.columns.tolist())
-        self.select_label_combobox.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
+        self.select_label_combobox.grid(row=2, column=1, padx=5, pady=5, sticky='ew')
         self.select_label_combobox.current(0)
 
-        self.train_test_ratio_label = ttk.Label(self.window, text="Test/Train ratio (0-0.5):")
-        self.train_test_ratio_label.grid(row=2, column=0, padx=5, pady=5, sticky='ew')
-
-        self.train_test_ratio_entry = ttk.Entry(self.window)
-        self.train_test_ratio_entry.grid(row=2, column=1, padx=5, pady=5, sticky='ew')
-        self.train_test_ratio_entry.insert(tk.END, "0.1")
-
         # Apply and Cancel buttons
-        self.apply_button = ttk.Button(self.window, text="Apply", command=self.apply_pca)
+        self.apply_button = ttk.Button(self.window, text="Apply", command=self.apply_classification)
         self.apply_button.grid(row=3, column=0, padx=5, pady=5)
 
         self.cancel_button = ttk.Button(self.window, text="Cancel", command=self.window.destroy)
         self.cancel_button.grid(row=3, column=1, padx=5, pady=5)
 
-    def apply_pca(self):
+    def apply_classification(self):
         self.selected_label = self.select_label_combobox.get()
-        self.pca = PCA()
-        # Fit PCA to standardized data
-        self.pca.fit(StandardScaler().fit_transform(self.df_X))
+        self.x_pc = int(self.x_pc_entry.get()) - 1
+        self.y_pc = int(self.y_pc_entry.get()) - 1
 
-        # Extract explained variance ratio
-        self.explained_variance_ratio = self.pca.explained_variance_ratio_
+        self.num_components = max([self.x_pc, self.y_pc])
+        if self.class_type == 'PCA':
 
-        self.pca = PCA(n_components=self.num_components)
-        self.x_pca = self.pca.fit_transform(self.df_X)
+            self.pca = PCA()
+            # Fit PCA to standardized data
+            self.pca.fit(StandardScaler().fit_transform(self.df_X))
 
-        for j in range(self.df_X.values.shape[1]):
-            corr1 = np.corrcoef(self.df_X.values[:, j], self.x_pca[:, 0])[0, 1]
-            corr2 = np.corrcoef(self.df_X.values[:, j], self.x_pca[:, 1])[0, 1]
-            self.ccircle.append((corr1, corr2))
-            self.eucl_dist.append(np.sqrt(corr1 ** 2 + corr2 ** 2))
+            # Extract explained variance ratio
+            self.explained_variance_ratio = self.pca.explained_variance_ratio_
 
-        self.window.destroy()
+            self.pca = PCA(n_components=int(self.num_components) + 1)
+            self.x_pca = self.pca.fit_transform(self.df_X)
+
+            for j in range(self.df_X.values.shape[1]):
+                corr1 = np.corrcoef(self.df_X.values[:, j], self.x_pca[:, 0])[0, 1]
+                corr2 = np.corrcoef(self.df_X.values[:, j], self.x_pca[:, 1])[0, 1]
+                self.ccircle.append((corr1, corr2))
+                self.eucl_dist.append(np.sqrt(corr1 ** 2 + corr2 ** 2))
+
+            self.window.destroy()
+
+        elif self.class_type == 'LDA':
+            # Discretize y into bins
+            est = KBinsDiscretizer(n_bins=10, encode='ordinal', strategy='uniform', subsample=200_000)
+            self.y_binned = est.fit_transform(self.df_y[self.selected_label].values.reshape(-1, 1)).squeeze()
+
+            self.lda = LinearDiscriminantAnalysis()
+            self.x_lda = self.lda.fit(self.df_X, self.y_binned)
+            self.explained_variance_ratio = self.lda.explained_variance_ratio_
+
+            self.lda = LinearDiscriminantAnalysis(n_components=int(self.num_components) + 1)
+            self.x_lda = self.lda.fit_transform(self.df_X, self.y_binned)
+
+            for j in range(self.df_X.values.shape[1]):
+                corr1 = np.corrcoef(self.df_X.values[:, j], self.x_lda[:, 0])[0, 1]
+                corr2 = np.corrcoef(self.df_X.values[:, j], self.x_lda[:, 1])[0, 1]
+                self.ccircle.append((corr1, corr2))
+                self.eucl_dist.append(np.sqrt(corr1 ** 2 + corr2 ** 2))
+
+            self.window.destroy()
 
 
 class MyChemometrix:
@@ -552,7 +557,7 @@ class MyChemometrix:
         self.fig3 = plt.Figure(figsize=(5, 5), dpi=100)
         self.fig4 = plt.Figure(figsize=(5, 5), dpi=100)
         # Canvas areas in the graphs_frame
-        self.top_left_canvas = tk.Canvas(self.graphs_frame, 
+        self.top_left_canvas = tk.Canvas(self.graphs_frame,
                                          width=graphs_frame_width // 2, height=screen_height // 2)
         self.top_left_canvas.grid(row=0, column=0, sticky="nsew")
 
@@ -562,7 +567,7 @@ class MyChemometrix:
         self.top_left_plot.get_tk_widget().config(highlightthickness=1, highlightbackground="black")
         self.top_left_plot.draw()
 
-        self.top_right_canvas = tk.Canvas(self.graphs_frame, 
+        self.top_right_canvas = tk.Canvas(self.graphs_frame,
                                           width=graphs_frame_width // 2, height=screen_height // 2)
         self.top_right_canvas.grid(row=0, column=1, sticky="nsew")
 
@@ -571,7 +576,7 @@ class MyChemometrix:
         self.top_right_plot.get_tk_widget().config(highlightthickness=1, highlightbackground="black")
         self.top_right_plot.draw()
 
-        self.bottom_left_canvas = tk.Canvas(self.graphs_frame, 
+        self.bottom_left_canvas = tk.Canvas(self.graphs_frame,
                                             width=graphs_frame_width // 2, height=screen_height // 2)
         self.bottom_left_canvas.grid(row=1, column=0, sticky="nsew")
 
@@ -580,7 +585,7 @@ class MyChemometrix:
         self.bottom_left_plot.get_tk_widget().config(highlightthickness=1, highlightbackground="black")
         self.bottom_left_plot.draw()
 
-        self.bottom_right_canvas = tk.Canvas(self.graphs_frame, 
+        self.bottom_right_canvas = tk.Canvas(self.graphs_frame,
                                              width=graphs_frame_width // 2, height=screen_height // 2)
         self.bottom_right_canvas.grid(row=1, column=1, sticky="nsew")
 
@@ -599,7 +604,7 @@ class MyChemometrix:
         self.raw_data_frame = ttk.LabelFrame(self.data_frame, text="Raw Data")
         self.raw_data_frame.pack(side="top", fill="both", expand=True, padx=10, pady=10)
 
-        self.raw_data_tree = ttk.Treeview(self.raw_data_frame)
+        self.raw_data_tree = ttk.Treeview(self.raw_data_frame, show='headings')
         self.raw_data_tree.pack(side="left", fill="both", expand=True)
 
         self.raw_data_scroll_y = tk.Scrollbar(self.raw_data_tree, orient="vertical",
@@ -615,7 +620,7 @@ class MyChemometrix:
         self.labels_data_frame = ttk.LabelFrame(self.data_frame, text="Labels")
         self.labels_data_frame.pack(side="top", fill="both", expand=True, padx=10, pady=10)
 
-        self.labels_data_tree = ttk.Treeview(self.labels_data_frame)
+        self.labels_data_tree = ttk.Treeview(self.labels_data_frame, show='headings')
         self.labels_data_tree.pack(side="left", fill="both", expand=True)
 
         self.labels_data_scroll_y = tk.Scrollbar(self.labels_data_tree, orient="vertical",
@@ -633,7 +638,7 @@ class MyChemometrix:
         self.features_data_frame = ttk.LabelFrame(self.data_frame, text="Features")
         self.features_data_frame.pack(side="top", fill="both", expand=True, padx=10, pady=10)
 
-        self.features_data_tree = ttk.Treeview(self.features_data_frame)
+        self.features_data_tree = ttk.Treeview(self.features_data_frame, show='headings')
         self.features_data_tree.pack(side="left", fill="both", expand=True)
 
         self.features_data_scroll_y = tk.Scrollbar(self.features_data_tree, orient="vertical",
@@ -682,7 +687,7 @@ class MyChemometrix:
                                              command=self.filter_data)
         self.filter_data_button.pack(side="left", fill="both", padx=5, pady=5)
 
-        self.standardscaler_button = ttk.Button(self.preprocessing_buttons_frame, text="Normalize",
+        self.standardscaler_button = ttk.Button(self.preprocessing_buttons_frame, text="Standardize Variables",
                                                 state="disabled",
                                                 command=self.apply_labels_normalization)
         self.standardscaler_button.pack(side="left", fill="both", padx=5, pady=5)
@@ -704,10 +709,12 @@ class MyChemometrix:
         self.optimize_button.pack(side="left", fill="both", padx=5, pady=5)
 
         self.pca_button = ttk.Button(self.classifier_buttons_frame, text="PCA", state="disabled",
-                                     command=self.open_classification_window)
+                                     command=lambda: self.open_classification_window('PCA'))
         self.pca_button.pack(side="left", fill="both", padx=5, pady=5)
 
-        self.LDA_button = ttk.Button(self.classifier_buttons_frame, text="LDA", state="disabled")
+        self.LDA_button = ttk.Button(self.classifier_buttons_frame, text="LDA",
+                                     command=lambda: self.open_classification_window('LDA'),
+                                     state="disabled")
         self.LDA_button.pack(side="left", fill="both", padx=5, pady=5)
 
         self.df_raw = None
@@ -755,7 +762,7 @@ class MyChemometrix:
     def display_data(self, file_path):
 
         if file_path.endswith('.csv'):
-            self.df_raw = pd.read_csv(file_path)
+            self.df_raw = pd.read_csv(file_path, encoding='utf-8')
         elif file_path.endswith('.xlsx'):
             self.df_raw = pd.read_excel(file_path)
 
@@ -768,14 +775,20 @@ class MyChemometrix:
         except _tkinter.TclError:
             pass
 
-        tree['columns'] = df.iloc[:].columns.values.tolist()
+        tree['columns'] = df.columns.tolist()
 
         for col in tree['columns']:
             tree.heading(col, text=col)
-            tree.column(col, anchor="center", minwidth=100, width=100)
+            tree.column(col, anchor="center", minwidth=80, width=80)
 
         for i, row in df.iterrows():
-            tree.insert("", "end", values=list(row))
+            formatted_row = []
+            for value in row:
+                if isinstance(value, float):
+                    formatted_row.append(float("{:.4f}".format(value)))
+                else:
+                    formatted_row.append(value)
+            tree.insert("", "end", values=formatted_row)
 
         self.activate_buttons()
 
@@ -896,6 +909,11 @@ class MyChemometrix:
 
         self.display_table(self.features_data_tree, self.df_X)
         self.display_table(self.labels_data_tree, self.df_y)
+
+        self.x_rows.set(str(self.df_X.shape[0]))
+        self.x_cols.set(str(self.df_X.shape[1]))
+        self.y_rows.set(str(self.df_y.shape[0]))
+        self.y_cols.set(str(self.df_y.shape[1]))
 
     def apply_labels_normalization(self):
         """
@@ -1070,9 +1088,9 @@ class MyChemometrix:
         # ax2.legend(loc='best')
         # ax2.grid(True)
 
-    def open_classification_window(self):
+    def open_classification_window(self, class_type):
         classification_window = Classification(self.master, self.df_X,
-                                               self.df_y)
+                                               self.df_y, class_type)
 
         self.master.wait_window(classification_window.window)
 
@@ -1086,73 +1104,148 @@ class MyChemometrix:
         ax3 = self.fig3.add_subplot(111)
         ax4 = self.fig4.add_subplot(111)
 
-        scatter = ax1.scatter(classification_window.x_pca[:, 0], classification_window.x_pca[:, 1],
-                              c=self.df_y[classification_window.selected_label].values)
-        ax1.set_title('PCA')
-        ax1.set_xlabel('PC1')
-        ax1.set_ylabel('PC2')
-        ax1.grid(True, alpha=0.3)
-        # Specify tick positions manually
-        ax1.xaxis.set_major_locator(plt.MaxNLocator(6))
+        if classification_window.class_type == 'PCA':
+            scatter = ax1.scatter(classification_window.x_pca[:, classification_window.x_pc],
+                                  classification_window.x_pca[:, classification_window.y_pc],
+                                  c=self.df_y[classification_window.selected_label].values)
+            ax1.set_title('PCA')
+            ax1.set_xlabel('PC' + str(classification_window.x_pc + 1))
+            ax1.set_ylabel('PC' + str(classification_window.y_pc + 1))
+            ax1.grid(True, alpha=0.3)
+            # Specify tick positions manually
+            ax1.xaxis.set_major_locator(plt.MaxNLocator(6))
 
-        cbar = self.fig1.colorbar(scatter)
-        cbar.set_label(classification_window.selected_label)
+            cbar = self.fig1.colorbar(scatter)
+            cbar.set_label(classification_window.selected_label)
 
-        ax2.plot(range(1, len(classification_window.explained_variance_ratio) + 1),
-                 classification_window.explained_variance_ratio, '-ob',
-                 label='Explained Variance ratio')
-        ax2.plot(range(1, len(classification_window.explained_variance_ratio) + 1),
-                 np.cumsum(classification_window.explained_variance_ratio), '-or',
-                 label='Cumulative Variance ratio')
-        ax2.set_title('Explained Variance')
-        ax2.set_xlabel('PC Number')
-        ax2.set_ylabel('Ratio')
-        ax2.grid(True, alpha=0.3)
-        ax2.legend(loc='best')
-        ax2.set_xlim(0.5, 10.5)
-        ax2.xaxis.set_major_locator(plt.MaxNLocator(6))
+            ax2.plot(range(1, len(classification_window.explained_variance_ratio) + 1),
+                     classification_window.explained_variance_ratio, '-ob',
+                     label='Explained Variance ratio')
+            ax2.plot(range(1, len(classification_window.explained_variance_ratio) + 1),
+                     np.cumsum(classification_window.explained_variance_ratio), '-or',
+                     label='Cumulative Variance ratio')
+            ax2.set_title('Explained Variance')
+            ax2.set_xlabel('PC Number')
+            ax2.set_ylabel('Ratio')
+            ax2.grid(True, alpha=0.3)
+            ax2.legend(loc='best')
+            ax2.set_xlim(0.5, 10.5)
+            ax2.xaxis.set_major_locator(plt.MaxNLocator(6))
 
-        cmap = plt.get_cmap('viridis')
-        for i, j in enumerate(classification_window.eucl_dist):
-            arrow_col = (classification_window.eucl_dist[i] - np.array(classification_window.eucl_dist).min()) / (
+            cmap = plt.get_cmap('viridis')
+            for i, j in enumerate(classification_window.eucl_dist):
+                arrow_col = (classification_window.eucl_dist[i] - np.array(classification_window.eucl_dist).min()) / (
                         np.array(classification_window.eucl_dist).max() -
                         np.array(classification_window.eucl_dist).min())
-            ax3.arrow(0, 0,  # Arrows start at the origin
-                      classification_window.ccircle[i][0],  # 0 for PC1
-                      classification_window.ccircle[i][1],  # 1 for PC2
-                      lw=2,  # line width
-                      length_includes_head=True,
-                      color=cmap(arrow_col),
-                      fc=cmap(arrow_col),
-                      head_width=0.05,
-                      head_length=0.05)
-            ax3.text((classification_window.ccircle[i][0]), (classification_window.ccircle[i][1]),
-                     self.df_X.columns[i])
-        # Draw the unit circle, for clarity
-        circle = Circle((0, 0), 1, facecolor='none', edgecolor='k', linewidth=1, alpha=0.5)
-        ax3.add_patch(circle)
-        ax3.set_title('PCA Correlation Circle')
-        ax3.set_xlabel('PC1')
-        ax3.set_ylabel('PC2')
-        ax3.set_xlim(-1, 1)
-        ax3.set_ylim(-1, 1)
-        ax3.axis('equal')
-        ax3.grid(True, alpha=0.3)
-        ax3.xaxis.set_major_locator(plt.MaxNLocator(6))
+                ax3.arrow(0, 0,  # Arrows start at the origin
+                          classification_window.ccircle[i][0],  # 0 for PC1
+                          classification_window.ccircle[i][1],  # 1 for PC2
+                          lw=2,  # line width
+                          length_includes_head=True,
+                          color=cmap(arrow_col),
+                          fc=cmap(arrow_col),
+                          head_width=0.05,
+                          head_length=0.05)
+                ax3.text((classification_window.ccircle[i][0]), (classification_window.ccircle[i][1]),
+                         self.df_X.columns[i], size=8)
+            # Draw the unit circle, for clarity
+            circle = Circle((0, 0), 1, facecolor='none', edgecolor='k', linewidth=1, alpha=0.5)
+            ax3.add_patch(circle)
+            ax3.set_title('PCA Correlation Circle')
+            ax3.set_xlabel('PC1')
+            ax3.set_ylabel('PC2')
+            ax3.set_xlim(-1, 1)
+            ax3.set_ylim(-1, 1)
+            ax3.axis('equal')
+            ax3.grid(True, alpha=0.3)
+            ax3.xaxis.set_major_locator(plt.MaxNLocator(6))
 
-        arr_2d = np.array(classification_window.eucl_dist).reshape(-1, 1)
-        scaler = MinMaxScaler()
-        scaler.fit(arr_2d)
+            arr_2d = np.array(classification_window.eucl_dist).reshape(-1, 1)
+            scaler = MinMaxScaler()
+            scaler.fit(arr_2d)
 
-        eucl_dist_scaled = scaler.transform(arr_2d).flatten()
-        for i in range(self.df_X.shape[1]):
-            ax4.scatter(float(self.df_X.columns[i]), self.df_X.mean(axis=0)[i], color=cmap(eucl_dist_scaled[i]))
-        ax4.set_title('Correlation Bands')
-        ax4.set_xlabel('X columns')
-        ax4.set_ylabel('Value')
+            eucl_dist_scaled = scaler.transform(arr_2d).flatten()
+            for i in range(self.df_X.shape[1]):
+                ax4.scatter(float(self.df_X.columns.values[i]), self.df_X.mean(axis=0).values[i],
+                            color=cmap(eucl_dist_scaled[i]))
+            ax4.set_title('Correlation Bands')
+            ax4.set_xlabel('X columns')
+            ax4.set_ylabel('Value')
 
-        ax4.xaxis.set_major_locator(plt.MaxNLocator(6))
-        ax4.grid(True, alpha=0.3)
+            ax4.xaxis.set_major_locator(plt.MaxNLocator(6))
+            ax4.grid(True, alpha=0.3)
+
+        elif classification_window.class_type == 'LDA':
+
+            scatter = ax1.scatter(classification_window.x_lda[:, classification_window.x_pc],
+                                  classification_window.x_lda[:, classification_window.y_pc],
+                                  c=classification_window.y_binned)
+            ax1.set_title('LDA')
+            ax1.set_xlabel('PC' + str(classification_window.x_pc + 1))
+            ax1.set_ylabel('PC' + str(classification_window.y_pc + 1))
+            ax1.grid(True, alpha=0.3)
+            # Specify tick positions manually
+            ax1.xaxis.set_major_locator(plt.MaxNLocator(6))
+
+            cbar = self.fig1.colorbar(scatter)
+            cbar.set_label(classification_window.selected_label + ' (binned)')
+
+            ax2.plot(range(1, len(classification_window.explained_variance_ratio) + 1),
+                     classification_window.explained_variance_ratio, '-ob',
+                     label='Explained Variance ratio')
+            ax2.plot(range(1, len(classification_window.explained_variance_ratio) + 1),
+                     np.cumsum(classification_window.explained_variance_ratio), '-or',
+                     label='Cumulative Variance ratio')
+            ax2.set_title('Explained Variance')
+            ax2.set_xlabel('PC Number')
+            ax2.set_ylabel('Ratio')
+            ax2.grid(True, alpha=0.3)
+            ax2.legend(loc='best')
+            ax2.set_xlim(0.5, 10.5)
+            ax2.xaxis.set_major_locator(plt.MaxNLocator(6))
+
+            cmap = plt.get_cmap('viridis')
+            for i, j in enumerate(classification_window.eucl_dist):
+                arrow_col = (classification_window.eucl_dist[i] - np.array(classification_window.eucl_dist).min()) / (
+                        np.array(classification_window.eucl_dist).max() -
+                        np.array(classification_window.eucl_dist).min())
+                ax3.arrow(0, 0,  # Arrows start at the origin
+                          classification_window.ccircle[i][0],  # 0 for PC1
+                          classification_window.ccircle[i][1],  # 1 for PC2
+                          lw=2,  # line width
+                          length_includes_head=True,
+                          color=cmap(arrow_col),
+                          fc=cmap(arrow_col),
+                          head_width=0.05,
+                          head_length=0.05)
+                ax3.text((classification_window.ccircle[i][0]), (classification_window.ccircle[i][1]),
+                         self.df_X.columns[i], size=8)
+            # Draw the unit circle, for clarity
+            circle = Circle((0, 0), 1, facecolor='none', edgecolor='k', linewidth=1, alpha=0.5)
+            ax3.add_patch(circle)
+            ax3.set_title('LDA Correlation Circle')
+            ax3.set_xlabel('PC1')
+            ax3.set_ylabel('PC2')
+            ax3.set_xlim(-1, 1)
+            ax3.set_ylim(-1, 1)
+            ax3.axis('equal')
+            ax3.grid(True, alpha=0.3)
+            ax3.xaxis.set_major_locator(plt.MaxNLocator(6))
+
+            arr_2d = np.array(classification_window.eucl_dist).reshape(-1, 1)
+            scaler = MinMaxScaler()
+            scaler.fit(arr_2d)
+
+            eucl_dist_scaled = scaler.transform(arr_2d).flatten()
+            for i in range(self.df_X.shape[1]):
+                ax4.scatter(float(self.df_X.columns.values[i]), self.df_X.mean(axis=0).values[i],
+                            color=cmap(eucl_dist_scaled[i]))
+            ax4.set_title('Correlation Bands')
+            ax4.set_xlabel('X columns')
+            ax4.set_ylabel('Value')
+
+            ax4.xaxis.set_major_locator(plt.MaxNLocator(6))
+            ax4.grid(True, alpha=0.3)
 
         self.top_left_plot.draw()
         self.top_right_plot.draw()
