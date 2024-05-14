@@ -348,7 +348,7 @@ class PLSOptimize:
         if self.num_components > self.df_X.shape[1]:
             self.num_components = self.df_X.shape[1]
 
-        self.components_range = range(1, 20)
+        self.components_range = range(1, 21)
         if max(self.components_range) > self.df_X.shape[1]:
             self.components_range = range(1, self.df_X.shape[1])
 
@@ -375,29 +375,30 @@ class PLSOptimize:
         self.num_components_entry.delete(0, tk.END)
         self.num_components_entry.insert(tk.END, rmsemin + 1)
 
-        # # Define PLS object with optimal number of components
-        # self.pls_opt = PLSRegression(n_components=rmsemin + 1)
-        #
-        # # Fir to the entire dataset
-        # self.pls_opt.fit(self.x_train, self.y_train)
-        #
-        # self.y_pred_train_opt = self.pls_opt.predict(self.x_train)
-        #
-        # # Cross-validation
-        # self.y_pred_cv_opt = cross_val_predict(self.pls_opt, self.x_train, self.y_train, cv=10)
-        #
-        # self.y_pred_test_opt = self.pls_opt.predict(self.x_test)
-        #
-        # # Calculate scores for calibration and cross-validation
-        # self.r2_train_opt = r2_score(self.y_train, self.y_pred_train_opt)
-        # self.r2_cv_opt = r2_score(self.y_train, self.y_pred_cv_opt)
-        # self.r2_test_opt = r2_score(self.y_train, self.y_pred_test_opt)
-        #
-        # # Calculate mean squared error for calibration and cross validation
-        # self.rmse_train_opt = np.sqrt(mean_squared_error(self.y_train, self.y_pred_train_opt))
-        # self.rmse_cv_opt = np.sqrt(mean_squared_error(self.y_train, self.y_pred_cv_opt))
-        # self.rmse_test_opt = np.sqrt(mean_squared_error(self.y_train, self.y_pred_test_opt))
+        # Define PLS object with optimal number of components
+        self.pls_opt = PLSRegression(n_components=rmsemin + 1)
 
+        # Fir to the entire dataset
+        self.pls_opt.fit(self.x_train, self.y_train)
+
+        self.y_pred_train_opt = self.pls_opt.predict(self.x_train)
+
+        # Cross-validation
+        self.y_pred_cv_opt = cross_val_predict(self.pls_opt, self.x_train, self.y_train, cv=10)
+
+        self.y_pred_test_opt = self.pls_opt.predict(self.x_test)
+
+        # Calculate scores for calibration and cross-validation
+        self.r2_train_opt = r2_score(self.y_train, self.y_pred_train_opt)
+        self.r2_cv_opt = r2_score(self.y_train, self.y_pred_cv_opt)
+        self.r2_test_opt = r2_score(self.y_test, self.y_pred_test_opt)
+
+        # Calculate mean squared error for calibration and cross validation
+        self.rmse_train_opt = np.sqrt(mean_squared_error(self.y_train, self.y_pred_train_opt))
+        self.rmse_cv_opt = np.sqrt(mean_squared_error(self.y_train, self.y_pred_cv_opt))
+        self.rmse_test_opt = np.sqrt(mean_squared_error(self.y_test, self.y_pred_test_opt))
+
+        print(self.rmse_scores)
         # # Plot regression and figures of merit
         # rangey = max(y) - min(y)
         # rangex = max(y_c) - min(y_c)
