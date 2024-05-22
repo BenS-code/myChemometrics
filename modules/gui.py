@@ -189,7 +189,7 @@ class Main:
                                              command=self.open_data_filtering_window)
         self.filter_data_button.pack(side="left", fill="both", padx=5, pady=5)
 
-        self.standardscaler_button = ttk.Button(self.preprocessing_buttons_frame, text="Standardize Variables",
+        self.standardscaler_button = ttk.Button(self.preprocessing_buttons_frame, text="Label Normalization",
                                                 state="disabled",
                                                 command=self.apply_labels_normalization)
         self.standardscaler_button.pack(side="left", fill="both", padx=5, pady=5)
@@ -297,6 +297,7 @@ class Main:
             self.root.wait_window(select_features_window.window)
             self.selected_x_columns = select_features_window.selected_columns
             self.df_x = self.df_raw[self.selected_x_columns]
+            self.df_x = DataStandardization(self.df_x, self.df_y).apply_msc()
             self.display_table(self.features_data_tree, self.df_x)
             self.activate_buttons()
             self.x_rows.set(str(self.df_x.shape[0]))
@@ -490,8 +491,13 @@ class Main:
         ax1.grid(True, alpha=0.3)
         ax1.xaxis.set_major_locator(plt.MaxNLocator(6))
 
-        for i, label in enumerate(regression_window.selected_labels):
-            ax2.plot(self.df_x.columns, regression_window.pls.coef_[i], label=label)
+        label = regression_window.label_to_display
+        i = 0
+        for i, _label in enumerate(regression_window.selected_labels):
+            if label == _label:
+                break
+
+        ax2.plot(self.df_x.columns, regression_window.pls.coef_[i], label=label)
         ax2.set_xlabel('X columns')
         ax2.set_ylabel('X Loadings')
         ax2.set_title('Regression Coefficients')
@@ -502,7 +508,7 @@ class Main:
             x_scores = regression_window.pls.x_scores_
             y_scores = regression_window.pls.y_scores_
 
-            ax3.plot(x_scores[:, 0], x_scores[:, 1], 'o', ms=4, label=f"X scores")
+            ax3.plot(x_scores[:, 0], -x_scores[:, 1], 'o', ms=4, label=f"X scores")
             ax3.plot(y_scores[:, 0], y_scores[:, 1], 'o', ms=4, label=f'y scores')
 
             ax3.set_xlabel('Component 1')
@@ -514,6 +520,16 @@ class Main:
 
             x_loadings = regression_window.pls.x_loadings_
             y_loadings = regression_window.pls.y_loadings_
+
+            x_std = 1
+            y_std = 1
+            if len(x_loadings) > 1:
+                x_std = np.std(x_loadings, axis=0)
+            if len(y_loadings) > 1:
+                y_std = np.std(y_loadings, axis=0)
+
+            x_loadings = (x_loadings - np.mean(x_loadings, axis=0))/x_std
+            y_loadings = (y_loadings - np.mean(y_loadings, axis=0))/y_std
             ax4.plot(x_loadings[:, 0], x_loadings[:, 1], 'o', ms=4, label=f'X loadings')
             ax4.plot(y_loadings[:, 0], y_loadings[:, 1], 'o', ms=4, label=f'y loadings')
             for i, feature in enumerate(self.df_x.columns):
@@ -848,6 +864,8 @@ class RegressionWin:
 
         self.window.destroy()
 
+        self.show_prediction_results()
+
     def optimize_pcs(self):
 
         self.num_components = min(int(self.num_components_entry.get()),
@@ -920,3 +938,31 @@ class RegressionWin:
             self.rmse_test = 0
 
         self.window.destroy()
+
+        self.show_prediction_results()
+
+    def show_prediction_results(self):
+
+        y_predicted = PLS(self.df_x, self.df_y).validate_pls(self.pls)
+
+        plt.figure(figsize=(12, 8))
+
+        # Plot the data
+        plt.plot(self.df_y.index, self.df_y[self.label_to_display],
+                 'ob', markersize=3, label=f"Measured - {self.label_to_display}", alpha=0.5)
+        plt.plot(self.df_y.index, y_predicted[self.label_to_display],
+                 'or', markersize=3, label=f"Predicted - {self.label_to_display}", alpha=0.3)
+
+        # Add title and labels
+        plt.title('Measured vs Predicted Data', fontsize=16)
+        plt.xlabel('Sample Index', fontsize=14)
+        plt.ylabel('Value', fontsize=14)
+
+        # Add grid
+        plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+
+        # Add legend
+        plt.legend(fontsize=12)
+
+        # Show plot with enhancements
+        plt.show()

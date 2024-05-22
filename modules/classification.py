@@ -18,23 +18,10 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 # from matplotlib.patches import Circle
 class PrincipalComponentAnalysis:
-    def __init__(self, parent, df_X, df_y, class_type):
-        self.y_binned = None
-        self.x_lda = None
-        self.lda = None
-        self.selected_label = None
-        self.class_type = class_type
-        self.x_pc = 0
-        self.y_pc = 1
-        self.eucl_dist = []
-        self.ccircle = []
-        self.explained_variance_ratio = None
-        self.x_pca = None
-        self.pca = None
-        self.parent = parent
-        self.df_X = df_X
+    def __init__(self, df_x, df_y):
+
+        self.df_X = df_x
         self.df_y = df_y
-        self.num_components = None
 
     def apply_classification(self):
         self.selected_label = self.select_label_combobox.get()

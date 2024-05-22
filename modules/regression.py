@@ -1,10 +1,11 @@
 import numpy as np
+import pandas as pd
 from sklearn.cross_decomposition import PLSRegression
 from sklearn.model_selection import train_test_split, cross_val_predict
-from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 from sklearn.metrics import mean_squared_error
 from scipy.stats import f
+from modules.preprocessing import DataStandardization
 
 
 class PLS:
@@ -16,10 +17,9 @@ class PLS:
     def apply_pls(self, num_components, selected_labels, train_test_ratio):
 
         # Initialize PLS model with desired number of components
-        pls = PLSRegression(n_components=num_components)
-        scaler = StandardScaler()
+        pls = PLSRegression(n_components=num_components, scale=False, copy=True)
 
-        pipeline = make_pipeline(scaler, pls)
+        pipeline = make_pipeline(pls)
 
         if train_test_ratio != 0:
 
@@ -72,11 +72,11 @@ class PLS:
 
         # Iterate over different numbers of components
         for component in components_range:
-            pls = PLSRegression(n_components=component)
+            pls = PLSRegression(n_components=component, scale=False)
             # pls.fit(x_train, y_train)
             y_pred_cv = cross_val_predict(pls, x_train, y_train, cv=10)
             rmse_cv = np.sqrt(mean_squared_error(y_train, y_pred_cv))
-            print(rmse_cv)
+
             rmse_cv_per_component.append(rmse_cv)
 
         # Calculate and print the position of minimum in RMSE
@@ -85,10 +85,11 @@ class PLS:
         return rmsemin, rmse_cv_per_component
 
     def optimize_pls(self, num_components, selected_labels, conf, max_outliers):
+
         x = self.df_x.copy()
         y = self.df_y[selected_labels].copy()
 
-        pls = PLSRegression(n_components=num_components)
+        pls = PLSRegression(n_components=num_components, scale=False)
         pls.fit(x, y)
 
         scores = pls.x_scores_
@@ -117,7 +118,7 @@ class PLS:
         rmse_cv = np.zeros(max_outliers)
 
         for j in range(max_outliers):
-            pls = PLSRegression(n_components=num_components)
+            pls = PLSRegression(n_components=num_components, scale=False)
             pls.fit(x_sorted.iloc[j:, :], y_sorted.iloc[j:, :])
             y_cv = cross_val_predict(pls, x_sorted.iloc[j:, :], y_sorted.iloc[j:, :], cv=10)
 
@@ -129,6 +130,15 @@ class PLS:
         self.df_y = y_sorted.iloc[rmsemin_index:, :].copy()
 
         return self.df_x, self.df_y, q_residuals, t_squared, q_residuals_conf, t_squared_conf, rmsemin_index
+
+    def validate_pls(self, pls):
+
+        coefficients = pls.coef_
+        intercept = pls.intercept_
+        y_predict = self.df_x @ coefficients.T + intercept
+        y_predict = pd.DataFrame(np.array(y_predict), columns=self.df_y.columns)
+
+        return y_predict
         #
         # self.apply_pls(num_components, )
         #

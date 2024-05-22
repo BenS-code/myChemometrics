@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from scipy.spatial.distance import cdist
+from sklearn.preprocessing import StandardScaler
 
 
 # from matplotlib.patches import Circle
@@ -61,6 +62,13 @@ class DataStandardization:
         self.df_x = df_x
         self.df_y = df_y
 
+    def standardize(self):
+        scaler = StandardScaler()
+        x_standardized = scaler.fit_transform(self.df_x)
+        x_standardized = pd.DataFrame(x_standardized, columns=self.df_x.columns)
+
+        return x_standardized
+
     def apply_labels_normalization(self):
 
         """
@@ -86,6 +94,7 @@ class DataStandardization:
         for i in range(temp_input.shape[0]):
             # Run regression
             fit = np.polyfit(ref, temp_input.iloc[i, :], 1, full=True)
+
             # Apply correction
             data_msc.iloc[i, :] = (temp_input.iloc[i, :] - fit[0][1]) / fit[0][0]
 
