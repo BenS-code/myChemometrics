@@ -7,14 +7,14 @@ import tkinter as tk
 from tkinter import ttk, filedialog
 from modules.preprocessing import DataInspection, DataFiltering, DataStandardization
 from modules.regression import PLS
-from sklearn.metrics import r2_score, mean_squared_error
+from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 
 
 class Main:
     def __init__(self, root):
 
         self.root = root
-        self.root.title("myChemometrix")
+        self.root.title("myChemometriX")
 
         # Get screen size
         screen_width = self.root.winfo_screenwidth()
@@ -168,6 +168,12 @@ class Main:
         self.classifier_buttons_frame = ttk.LabelFrame(self.buttons_frame, text="Classification")
         self.classifier_buttons_frame.pack(side="left", fill="both", expand=True)
 
+        self.test_model_buttons_frame = ttk.LabelFrame(self.buttons_frame, text="Test Model")
+        self.test_model_buttons_frame.pack(side="left", fill="both", expand=True)
+
+        self.export_buttons_frame = ttk.LabelFrame(self.buttons_frame, text="Export Results")
+        self.export_buttons_frame.pack(side="left", fill="both", expand=True)
+
         # Create buttons
         self.load_data_button = ttk.Button(self.data_buttons_frame, text="Load Data",
                                            command=self.import_file)
@@ -213,6 +219,14 @@ class Main:
         self.LDA_button = ttk.Button(self.classifier_buttons_frame, text="LDA", state="disabled",
                                      command=False)  # lambda: self.open_classification_window('LDA')
         self.LDA_button.pack(side="left", fill="both", padx=5, pady=5)
+
+        self.load_test_button = ttk.Button(self.test_model_buttons_frame, text="Load Test", state="disabled",
+                                           command=False)
+        self.load_test_button.pack(side="left", fill="both", padx=5, pady=5)
+
+        self.export_data_button = ttk.Button(self.export_buttons_frame, text="Export", state="disabled",
+                                             command=False)
+        self.export_data_button.pack(side="left", fill="both", padx=5, pady=5)
 
         self.df_raw = None
         self.df_x = None
@@ -297,7 +311,8 @@ class Main:
             self.root.wait_window(select_features_window.window)
             self.selected_x_columns = select_features_window.selected_columns
             self.df_x = self.df_raw[self.selected_x_columns]
-            self.df_x = DataStandardization(self.df_x, self.df_y).apply_msc()
+            # self.df_x = DataStandardization(self.df_x, self.df_y).apply_msc()
+            # self.df_x = DataStandardization(self.df_x, self.df_y).area_normalization()
             self.display_table(self.features_data_tree, self.df_x)
             self.activate_buttons()
             self.x_rows.set(str(self.df_x.shape[0]))
@@ -445,27 +460,50 @@ class Main:
         ax3 = self.fig3.add_subplot(111)
         ax4 = self.fig4.add_subplot(111)
 
+        label = regression_window.label_to_display
+        num_components = regression_window.pls.best_estimator_.n_components
+
+        y_train = regression_window.y_train[label]
+
+        y_pred_train = regression_window.y_pred_train[label]
+        y_pred_cv = regression_window.y_pred_cv[label]
+
+        rmse_train = regression_window.rmse_train
+        rmse_cv = regression_window.rmse_cv
+
+        r2_train = regression_window.r2_train
+        r2_cv = regression_window.r2_cv
+
+        z_train = np.polyfit(y_train.values, y_pred_train.values, 1)
+        z_cv = np.polyfit(y_train.values, y_pred_cv.values, 1)
+
+        if not regression_window.y_test.empty:
+            y_test = regression_window.y_test[label]
+            y_pred_test = regression_window.y_pred_test[label]
+            rmse_test = regression_window.rmse_test
+            r2_test = regression_window.r2_test
+            z_test = np.polyfit(y_test.values, y_pred_test.values, 1)
+        else:
+            y_test = pd.DataFrame([])
+            y_pred_test = pd.DataFrame([])
+            rmse_test = 0
+            r2_test = 0
+            z_test = [0, 0]
+
         # Creating the legend table
         legend_table = ax1.table(
-            cellText=[[f'Train', f'{regression_window.rmse_train:.6f}', f'{regression_window.r2_train:.6f}'],
-                      [f'CV', f'{regression_window.rmse_cv:.6f}', f'{regression_window.r2_cv:.6f}'],
-                      [f'Test', f'{regression_window.rmse_test:.6f}', f'{regression_window.r2_test:.6f}']],
-            colLabels=['', 'RMSE', 'R-Square'],
+            cellText=[[f'Train', f'{rmse_train:.6f}', f'{r2_train:.6f}', f'{z_train[0]:.6f}'],
+                      [f'CV', f'{rmse_cv:.6f}', f'{r2_cv:.6f}', f'{z_cv[0]:.6f}'],
+                      [f'Test', f'{rmse_test:.6f}', f'{r2_test:.6f}', f'{z_test[0]:.6f}']],
+            colLabels=['', 'RMSE', 'R-Square', 'Slope'],
             loc='upper left',
             cellLoc='center',
-            cellColours=[['w', 'b', 'b'], ['w', 'r', 'r'], ['w', 'g', 'g']])
+            cellColours=[['w', 'b', 'b', 'b'], ['w', 'r', 'r', 'r'], ['w', 'g', 'g', 'g']])
 
         # Styling the legend table
         legend_table.auto_set_font_size(False)
         legend_table.set_fontsize(10)
-        legend_table.scale(0.4, 1.2)  # Adjust the size of the legend table
-
-        y_train = regression_window.y_train
-        y_test = regression_window.y_test
-
-        y_pred_train = regression_window.y_pred_train
-        y_pred_cv = regression_window.y_pred_cv
-        y_pred_test = regression_window.y_pred_test
+        legend_table.scale(0.6, 1.2)  # Adjust the size of the legend table
 
         z = np.polyfit(y_train, y_pred_train, 1)
 
@@ -482,106 +520,107 @@ class Main:
         ax1.plot(np.polyval(z, y_train),
                  y_train,
                  color='b', linewidth=1, linestyle='--', label='Model Line')
-        ax1.set_title(f'Predicted vs True Results - Label={regression_window.label_to_display} |'
-                      f' PC#={regression_window.num_components} |'
-                      f' Test/Train={regression_window.train_test_ratio * 100}%')
+        ax1.set_title(f'Predicted vs True Results - Label={label} |'
+                      f' PC#={num_components} |'
+                      f' Test/Train={regression_window.test_ratio * 100}%')
         ax1.set_xlabel('True Values')
         ax1.set_ylabel('Predicted Values')
         ax1.legend(loc='lower right')
         ax1.grid(True, alpha=0.3)
         ax1.xaxis.set_major_locator(plt.MaxNLocator(6))
 
-        label = regression_window.label_to_display
         i = 0
         for i, _label in enumerate(regression_window.selected_labels):
             if label == _label:
                 break
 
-        ax2.plot(self.df_x.columns, regression_window.pls.coef_[i], label=label)
+        ax2.plot(self.df_x.columns, regression_window.pls.best_estimator_.coef_[i], label=label)
         ax2.set_xlabel('X columns')
         ax2.set_ylabel('X Loadings')
         ax2.set_title('Regression Coefficients')
         ax2.legend(loc='best')
         ax2.grid(True, alpha=0.3)
         ax2.xaxis.set_major_locator(plt.MaxNLocator(6))
-        if not regression_window.opt_flag:
-            x_scores = regression_window.pls.x_scores_
-            y_scores = regression_window.pls.y_scores_
 
-            ax3.plot(x_scores[:, 0], -x_scores[:, 1], 'o', ms=4, label=f"X scores")
-            ax3.plot(y_scores[:, 0], y_scores[:, 1], 'o', ms=4, label=f'y scores')
+        x_scores = regression_window.pls.best_estimator_.x_scores_
+        y_scores = regression_window.pls.best_estimator_.y_scores_
 
-            ax3.set_xlabel('Component 1')
-            ax3.set_ylabel('Component 2')
-            ax3.set_title('Scores Plot')
-            ax3.legend(loc='best')
-            ax3.grid(True, alpha=0.3)
-            ax3.xaxis.set_major_locator(plt.MaxNLocator(6))
+        ax3.plot(x_scores[:, 0], -x_scores[:, 1], 'o', ms=4, label=f"X scores")
+        ax3.plot(y_scores[:, 0], y_scores[:, 1], 'o', ms=4, label=f'y scores')
 
-            x_loadings = regression_window.pls.x_loadings_
-            y_loadings = regression_window.pls.y_loadings_
+        ax3.set_xlabel('Component 1')
+        ax3.set_ylabel('Component 2')
+        ax3.set_title('Scores Plot')
+        ax3.legend(loc='best')
+        ax3.grid(True, alpha=0.3)
+        ax3.xaxis.set_major_locator(plt.MaxNLocator(6))
 
-            x_std = 1
-            y_std = 1
-            if len(x_loadings) > 1:
-                x_std = np.std(x_loadings, axis=0)
-            if len(y_loadings) > 1:
-                y_std = np.std(y_loadings, axis=0)
+        x_loadings = regression_window.pls.best_estimator_.x_loadings_
+        y_loadings = regression_window.pls.best_estimator_.y_loadings_
 
-            x_loadings = (x_loadings - np.mean(x_loadings, axis=0))/x_std
-            y_loadings = (y_loadings - np.mean(y_loadings, axis=0))/y_std
-            ax4.plot(x_loadings[:, 0], x_loadings[:, 1], 'o', ms=4, label=f'X loadings')
-            ax4.plot(y_loadings[:, 0], y_loadings[:, 1], 'o', ms=4, label=f'y loadings')
-            for i, feature in enumerate(self.df_x.columns):
-                ax4.annotate(feature, (x_loadings[i, 0], x_loadings[i, 1]), textcoords="offset points",
-                             xytext=(5, 5), fontsize=6, ha='right')
-            for i, label in enumerate(regression_window.selected_labels):
-                ax4.annotate(label, (y_loadings[i, 0], y_loadings[i, 1]), textcoords="offset points",
-                             xytext=(5, 5), fontsize=8, ha='right')
-            ax4.set_xlabel('Component 1')
-            ax4.set_ylabel('Component 2')
-            ax4.set_title('Loadings Plot')
-            ax4.legend(loc='best')
-            ax4.grid(True, alpha=0.3)
+        x_std = 1
+        y_std = 1
+        if len(x_loadings) > 1:
+            x_std = np.std(x_loadings, axis=0)
+        if len(y_loadings) > 1:
+            y_std = np.std(y_loadings, axis=0)
 
-        elif regression_window.opt_flag:
+        x_loadings = (x_loadings - np.mean(x_loadings, axis=0)) / x_std
+        y_loadings = (y_loadings - np.mean(y_loadings, axis=0)) / y_std
+        ax4.plot(x_loadings[:, 0], x_loadings[:, 1], 'o', ms=4, label=f'X loadings')
+        ax4.plot(y_loadings[:, 0], y_loadings[:, 1], 'o', ms=4, label=f'y loadings')
+        for i, feature in enumerate(self.df_x.columns):
+            ax4.annotate(feature, (x_loadings[i, 0], x_loadings[i, 1]), textcoords="offset points",
+                         xytext=(5, 5), fontsize=6, ha='right')
+        for i, label in enumerate(regression_window.selected_labels):
+            ax4.annotate(label, (y_loadings[i, 0], y_loadings[i, 1]), textcoords="offset points",
+                         xytext=(5, 5), fontsize=8, ha='right')
+        ax4.set_xlabel('Component 1')
+        ax4.set_ylabel('Component 2')
+        ax4.set_title('Loadings Plot')
+        ax4.legend(loc='best')
+        ax4.grid(True, alpha=0.3)
 
-            rmse_min_index = regression_window.rmsemin
-
-            ax3.plot(regression_window.components_range, regression_window.rmse_cv_per_component, marker='o')
-            ax3.plot(regression_window.components_range[rmse_min_index],
-                     regression_window.rmse_cv_per_component[rmse_min_index],
-                     'P', ms=6, mfc='red',
-                     label=f'Optimized Number of'
-                           f' Components={regression_window.components_range[rmse_min_index]}')
-            ax3.set_xlabel('Number of Components')
-            ax3.set_ylabel('RMSE')
-            ax3.set_title('RMSE vs Number of Components')
-            ax3.legend(loc='best')
-            ax3.grid(True)
-            # ax3.xaxis.set_major_locator(plt.MaxNLocator(6))
-
-            self.fig4.clear()
-            ax4 = self.fig4.add_subplot(111)
-            ax4.plot(regression_window.t_squared, regression_window.q_residuals, 'o')
-            ax4.plot([regression_window.t_squared_conf, regression_window.t_squared_conf],
-                     [ax4.axis()[2], ax4.axis()[3]], '--')
-            ax4.plot([ax4.axis()[0], ax4.axis()[1]], [regression_window.q_residuals_conf,
-                                                      regression_window.q_residuals_conf], '--')
-            ax4.set_title('Outliers Map')
-            ax4.set_xlabel("Hotelling's T-squared")
-            ax4.set_ylabel('Q residuals')
-
+        # elif regression_window.opt_flag:
+        #
+        #     rmse_min_index = regression_window.rmsemin
+        #
+        #     ax3.plot(regression_window.components_range, regression_window.rmse_cv_per_component, marker='o')
+        #     ax3.plot(regression_window.components_range[rmse_min_index],
+        #              regression_window.rmse_cv_per_component[rmse_min_index],
+        #              'P', ms=6, mfc='red',
+        #              label=f'Optimized Number of'
+        #                    f' Components={regression_window.components_range[rmse_min_index]}')
+        #     ax3.set_xlabel('Number of Components')
+        #     ax3.set_ylabel('RMSE')
+        #     ax3.set_title('RMSE vs Number of Components')
+        #     ax3.legend(loc='best')
+        #     ax3.grid(True)
+        #     ax3.xaxis.set_major_locator(plt.MaxNLocator(20))
+        #
+        #     self.fig4.clear()
+        #     ax4 = self.fig4.add_subplot(111)
+        #     ax4.plot(regression_window.t_squared, regression_window.q_residuals, 'o')
+        #     ax4.plot([regression_window.t_squared_conf, regression_window.t_squared_conf],
+        #              [ax4.axis()[2], ax4.axis()[3]], '--')
+        #     ax4.plot([ax4.axis()[0], ax4.axis()[1]], [regression_window.q_residuals_conf,
+        #                                               regression_window.q_residuals_conf], '--')
+        #     ax4.set_title('Outliers Map')
+        #     ax4.set_xlabel("Hotelling's T-squared")
+        #     ax4.set_ylabel('Q residuals')
+        #
         self.top_left_plot.draw()
         self.top_right_plot.draw()
         self.bottom_left_plot.draw()
         self.bottom_right_plot.draw()
 
+        regression_window.show_prediction_results()
+
 
 class DataSelectionWin:
     def __init__(self, root, df):
         self.root = root
-        self.columns = df.columns
+        self.columns = df.select_dtypes(include=[np.number]).columns
         self.selected_columns = []
 
         self.window = tk.Toplevel(root)
@@ -598,8 +637,6 @@ class DataSelectionWin:
 
         self.listbox.config(yscrollcommand=self.scrollbar.set)
         self.scrollbar.config(command=self.listbox.yview)
-
-        # self.listbox.bind("<<ListboxSelect>>", self.on_select)
 
         self.select_button = ttk.Button(self.window, text="Select", command=self.select_columns)
         self.select_button.pack(side=tk.LEFT, padx=5, pady=5)
@@ -661,62 +698,62 @@ class DataFilteringWin:
 
         self.window.destroy()
 
-    #
+
+class ClassificationWin:
+    def __init__(self, root, df_x, df_y, class_type):
+        # self.y_binned = None
+        # self.x_lda = None
+        # self.lda = None
+        # self.selected_label = None
+        # self.class_type = class_type
+        # self.x_pc = 0
+        # self.y_pc = 1
+        # self.euclidian_dist = []
+        # self.corr_circle = []
+        # self.explained_variance_ratio = None
+        # self.x_pca = None
+        # self.pca = None
+        # self.root = root
+        # self.df_x = df_x
+        # self.df_y = df_y
+        # self.num_components = None
+
+        self.window = tk.Toplevel(root)
+        self.window.title("Classification Options")
+        # self.window.geometry("360x200")
+
+        # Label and entry for number of components
+        self.x_pc_label = ttk.Label(self.window, text="x-axis component:")
+        self.x_pc_label.grid(row=0, column=0, padx=5, pady=5, sticky='ew')
+
+        self.x_pc_entry = ttk.Entry(self.window)
+        self.x_pc_entry.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
+        self.x_pc_entry.insert(tk.END, "1")
+
+        # Label and entry for number of components
+        self.y_pc_label = ttk.Label(self.window, text="y-axis component:")
+        self.y_pc_label.grid(row=1, column=0, padx=5, pady=5, sticky='ew')
+
+        self.y_pc_entry = ttk.Entry(self.window)
+        self.y_pc_entry.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
+        self.y_pc_entry.insert(tk.END, "2")
+
+        # ComboBox for selecting label
+        self.select_label_label = ttk.Label(self.window, text="Select Label:")
+        self.select_label_label.grid(row=2, column=0, padx=5, pady=5, sticky='ew')
+
+        self.select_label_combobox = ttk.Combobox(self.window, values=self.df_y.columns.tolist())
+        self.select_label_combobox.grid(row=2, column=1, padx=5, pady=5, sticky='ew')
+        self.select_label_combobox.current(0)
+
+        # Apply and Cancel buttons
+        self.apply_button = ttk.Button(self.window, text="Apply", command=False)  #self.apply_classification
+        self.apply_button.grid(row=3, column=0, padx=5, pady=5)
+
+        self.cancel_button = ttk.Button(self.window, text="Cancel", command=self.window.destroy)
+        self.cancel_button.grid(row=3, column=1, padx=5, pady=5)
 
 
-# class Classification:
-#     def __init__(self, root, df_x, df_y, class_type):
-#         # self.y_binned = None
-#         # self.x_lda = None
-#         # self.lda = None
-#         # self.selected_label = None
-#         # self.class_type = class_type
-#         # self.x_pc = 0
-#         # self.y_pc = 1
-#         # self.euclidian_dist = []
-#         # self.corr_circle = []
-#         # self.explained_variance_ratio = None
-#         # self.x_pca = None
-#         # self.pca = None
-#         # self.root = root
-#         # self.df_x = df_x
-#         # self.df_y = df_y
-#         # self.num_components = None
-#
-#         self.window = tk.Toplevel(root)
-#         self.window.title("Classification Options")
-#         # self.window.geometry("360x200")
-#
-#         # Label and entry for number of components
-#         self.x_pc_label = ttk.Label(self.window, text="x-axis component:")
-#         self.x_pc_label.grid(row=0, column=0, padx=5, pady=5, sticky='ew')
-#
-#         self.x_pc_entry = ttk.Entry(self.window)
-#         self.x_pc_entry.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
-#         self.x_pc_entry.insert(tk.END, "1")
-#
-#         # Label and entry for number of components
-#         self.y_pc_label = ttk.Label(self.window, text="y-axis component:")
-#         self.y_pc_label.grid(row=1, column=0, padx=5, pady=5, sticky='ew')
-#
-#         self.y_pc_entry = ttk.Entry(self.window)
-#         self.y_pc_entry.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
-#         self.y_pc_entry.insert(tk.END, "2")
-#
-#         # ComboBox for selecting label
-#         self.select_label_label = ttk.Label(self.window, text="Select Label:")
-#         self.select_label_label.grid(row=2, column=0, padx=5, pady=5, sticky='ew')
-#
-#         self.select_label_combobox = ttk.Combobox(self.window, values=self.df_y.columns.tolist())
-#         self.select_label_combobox.grid(row=2, column=1, padx=5, pady=5, sticky='ew')
-#         self.select_label_combobox.current(0)
-#
-#         # Apply and Cancel buttons
-#         self.apply_button = ttk.Button(self.window, text="Apply", command=False)  #self.apply_classification
-#         self.apply_button.grid(row=3, column=0, padx=5, pady=5)
-#
-#         self.cancel_button = ttk.Button(self.window, text="Cancel", command=self.window.destroy)
-#         self.cancel_button.grid(row=3, column=1, padx=5, pady=5)
 #
 #
 class RegressionWin:
@@ -727,15 +764,18 @@ class RegressionWin:
         self.df_y = df_y
         self.selected_labels = []
         self.label_to_display = []
+        self.group_by = []
         self.num_components = []
-        self.train_test_ratio = []
+        self.test_ratio = []
         self.components_range = np.arange(1, 20)
         self.pls = None
-        self.y_train = []
-        self.y_test = []
-        self.y_pred_train = []
-        self.y_pred_cv = []
-        self.y_pred_test = []
+        self.y_train = pd.DataFrame([])
+        self.y_test = pd.DataFrame([])
+        self.y_pred_train = pd.DataFrame([])
+        self.y_pred_cv = pd.DataFrame([])
+        self.y_pred_test = pd.DataFrame([])
+        self.train_groups = pd.DataFrame([])
+        self.test_groups = pd.DataFrame([])
         self.r2_train = []
         self.r2_cv = []
         self.r2_test = []
@@ -744,7 +784,6 @@ class RegressionWin:
         self.rmse_test = []
         self.rmse_cv_per_component = []
         self.rmsemin = 1
-        self.opt_flag = False
         self.conf = 0.95
         self.max_outliers = 20
 
@@ -769,46 +808,47 @@ class RegressionWin:
         self.select_label_combobox = ttk.Combobox(self.window, values=[])
         self.select_label_combobox.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
 
-        self.num_components_label = ttk.Label(self.window, text="Number of Components:")
+        self.num_components_label = ttk.Label(self.window, text="Maximum Number of Components:")
         self.num_components_label.grid(row=2, column=0, padx=5, pady=5, sticky='ew')
 
         self.num_components_entry = ttk.Entry(self.window)
         self.num_components_entry.grid(row=2, column=1, padx=5, pady=5, sticky='ew')
-        self.num_components_entry.insert(tk.END, "2")
+        self.num_components_entry.insert(tk.END, "8")
 
-        self.train_test_ratio_label = ttk.Label(self.window, text="Test/Train Ratio (0-0.5):")
-        self.train_test_ratio_label.grid(row=3, column=0, padx=5, pady=5, sticky='ew')
+        self.test_ratio_label = ttk.Label(self.window, text="Test/Train Ratio (0-0.5):")
+        self.test_ratio_label.grid(row=3, column=0, padx=5, pady=5, sticky='ew')
 
-        self.train_test_ratio_entry = ttk.Entry(self.window)
-        self.train_test_ratio_entry.grid(row=3, column=1, padx=5, pady=5, sticky='ew')
-        self.train_test_ratio_entry.insert(tk.END, "0.1")
+        self.test_ratio_entry = ttk.Entry(self.window)
+        self.test_ratio_entry.grid(row=3, column=1, padx=5, pady=5, sticky='ew')
+        self.test_ratio_entry.insert(tk.END, "0.0")
 
-        self.num_components_optimize_button = ttk.Button(self.window, text="Optimize PCs", command=self.optimize_pcs)
-        self.num_components_optimize_button.grid(row=2, column=2, padx=5, pady=5)
+        # ComboBox for selecting label
+        self.group_by_label = ttk.Label(self.window, text="Group By:")
+        self.group_by_label.grid(row=4, column=0, padx=5, pady=5, sticky='ew')
 
-        self.num_outliers_label = ttk.Label(self.window, text="Number of Outliers to Remove:")
-        self.num_outliers_label.grid(row=4, column=0, padx=5, pady=5, sticky='ew')
+        self.group_by_combobox = ttk.Combobox(self.window, values=[])
+        self.group_by_combobox.grid(row=4, column=1, padx=5, pady=5, sticky='ew')
+
+        self.num_outliers_label = ttk.Label(self.window, text="Maximum Number of Outliers to Remove:")
+        self.num_outliers_label.grid(row=5, column=0, padx=5, pady=5, sticky='ew')
 
         self.num_outliers_entry = ttk.Entry(self.window)
-        self.num_outliers_entry.grid(row=4, column=1, padx=5, pady=5, sticky='ew')
-        self.num_outliers_entry.insert(tk.END, "20")
+        self.num_outliers_entry.grid(row=5, column=1, padx=5, pady=5, sticky='ew')
+        self.num_outliers_entry.insert(tk.END, "0")
 
         self.confidence_label = ttk.Label(self.window, text="Confidence Level (0.5-0.99):")
-        self.confidence_label.grid(row=5, column=0, padx=5, pady=5, sticky='ew')
+        self.confidence_label.grid(row=6, column=0, padx=5, pady=5, sticky='ew')
 
         self.confidence_entry = ttk.Entry(self.window)
-        self.confidence_entry.grid(row=5, column=1, padx=5, pady=5, sticky='ew')
+        self.confidence_entry.grid(row=6, column=1, padx=5, pady=5, sticky='ew')
         self.confidence_entry.insert(tk.END, "0.95")
 
         # Apply and Cancel buttons
         self.apply_button = ttk.Button(self.window, text="Apply", command=self.apply_pls)
-        self.apply_button.grid(row=6, column=0, padx=5, pady=5)
-
-        self.optimize_button = ttk.Button(self.window, text="Optimize", command=self.optimize_pls)
-        self.optimize_button.grid(row=6, column=1, padx=5, pady=5)
+        self.apply_button.grid(row=7, column=0, padx=5, pady=5)
 
         self.cancel_button = ttk.Button(self.window, text="Cancel", command=self.window.destroy)
-        self.cancel_button.grid(row=6, column=2, padx=5, pady=5)
+        self.cancel_button.grid(row=7, column=1, padx=5, pady=5)
 
     def open_select_labels_window(self):
         select_labels_window = DataSelectionWin(self.root, self.df_y)
@@ -817,144 +857,128 @@ class RegressionWin:
         self.selected_labels_entry.delete(0, tk.END)
         self.selected_labels_entry.insert(tk.END, str(self.selected_labels))
         self.select_label_combobox['values'] = self.selected_labels
+        self.group_by_combobox['values'] = self.df_y.columns.tolist()
+        self.select_label_combobox.current(0)
+        value = 'test #'
+        try:
+            index = self.group_by_combobox['values'].index(value)
+            self.group_by_combobox.current(index)
+        except ValueError:
+            self.group_by_combobox.current(0)
 
     def apply_pls(self):
 
-        self.opt_flag = False
         self.num_components = min(int(self.num_components_entry.get()),
                                   self.df_x.shape[0], self.df_x.shape[1])
         self.label_to_display = str(self.select_label_combobox.get())
+        self.group_by = str(self.group_by_combobox.get())
+        self.max_outliers = str(self.num_outliers_entry.get())
+        self.conf = str(self.confidence_entry.get())
 
-        self.train_test_ratio = float(self.train_test_ratio_entry.get())
-        if self.train_test_ratio < 0.001:
-            self.train_test_ratio = 0
-        elif self.train_test_ratio > 0.5:
-            self.train_test_ratio = 0.5
+        self.test_ratio = float(self.test_ratio_entry.get())
+        if self.test_ratio < 0:
+            self.test_ratio = 0
+        elif self.test_ratio > 0.5:
+            self.test_ratio = 0.5
 
         (self.pls, self.y_train, self.y_test, self.y_pred_train,
-         self.y_pred_cv, self.y_pred_test) = PLS(self.df_x, self.df_y).apply_pls(self.num_components,
-                                                                                 self.selected_labels,
-                                                                                 self.train_test_ratio)
+         self.y_pred_cv, self.y_pred_test, self.train_groups, self.test_groups) = \
+            PLS(self.df_x, self.df_y).apply_pls(self.num_components,
+                                                self.selected_labels,
+                                                self.test_ratio,
+                                                self.label_to_display,
+                                                self.group_by,
+                                                int(self.max_outliers),
+                                                float(self.conf))
 
-        self.y_pred_train = pd.DataFrame(self.y_pred_train, columns=self.selected_labels)
-        self.y_pred_cv = pd.DataFrame(self.y_pred_cv, columns=self.selected_labels)
-        self.y_pred_test = pd.DataFrame(self.y_pred_test, columns=self.selected_labels)
-        self.y_train = self.y_train[self.label_to_display]
+        self.rmse_train, self.r2_train = (np.sqrt(
+            mean_squared_error(self.y_train[self.label_to_display], self.y_pred_train[self.label_to_display])),
+                                          r2_score(self.y_train[self.label_to_display],
+                                                   self.y_pred_train[self.label_to_display]))
 
-        self.y_pred_train = self.y_pred_train[self.label_to_display]
-        self.y_pred_cv = self.y_pred_cv[self.label_to_display]
-
-        # Calculate R^2 score
-        self.r2_train = r2_score(self.y_train, self.y_pred_train)
-        self.r2_cv = r2_score(self.y_train, self.y_pred_cv)
-
-        # calculate RMSE
-        self.rmse_train = np.sqrt(mean_squared_error(self.y_train, self.y_pred_train))
-        self.rmse_cv = np.sqrt(mean_squared_error(self.y_train, self.y_pred_cv))
+        self.rmse_cv, self.r2_cv = (np.sqrt(mean_squared_error(self.y_train[self.label_to_display],
+                                                               self.y_pred_cv[self.label_to_display])),
+                                    r2_score(self.y_train[self.label_to_display],
+                                             self.y_pred_cv[self.label_to_display]))
 
         if not self.y_pred_test.empty:
-            self.y_test = self.y_test[self.label_to_display]
-            self.y_pred_test = self.y_pred_test[self.label_to_display]
-            self.r2_test = r2_score(self.y_test, self.y_pred_test)
-            self.rmse_test = np.sqrt(mean_squared_error(self.y_test, self.y_pred_test))
+
+            self.rmse_test, self.r2_test = (np.sqrt(
+                mean_squared_error(self.y_test[self.label_to_display], self.y_pred_test[self.label_to_display])),
+                                            r2_score(self.y_test[self.label_to_display],
+                                                     self.y_pred_test[self.label_to_display]))
 
         else:
-            self.r2_test = 0
-            self.rmse_test = 0
+            pass
 
         self.window.destroy()
 
-        self.show_prediction_results()
+        dict_ = {'Ref': [],
+                 'Train/Test': [],
+                 'Mean': [],
+                 'STD': [],
+                 'MAE': [],
+                 'Relative Error %': []}
 
-    def optimize_pcs(self):
+        results_df = pd.DataFrame(dict_)
 
-        self.num_components = min(int(self.num_components_entry.get()),
-                                  self.df_x.shape[0], self.df_x.shape[1])
-        self.label_to_display = str(self.select_label_combobox.get())
+        for indx, i in enumerate(np.unique(self.train_groups)):
+            ref = self.y_train[self.label_to_display][self.train_groups.values == i].values.mean()
+            class_ = 'Train'
+            mean = self.y_pred_train[self.label_to_display][self.train_groups.values == i].values.mean()
+            std = self.y_pred_train[self.label_to_display][self.train_groups.values == i].values.std()
+            MAE = mean_absolute_error(self.y_train[self.label_to_display][self.train_groups.values == i].values,
+                                      self.y_pred_train[self.label_to_display][self.train_groups.values == i].values)
+            denominator = self.y_train[self.label_to_display][self.train_groups.values == i].values.mean()
+            # if denominator < 1:
+            #     denominator = 1
+            rel_err = MAE * 100 / np.abs(denominator)
 
-        self.train_test_ratio = float(self.train_test_ratio_entry.get())
-        if self.train_test_ratio < 0.001:
-            self.train_test_ratio = 0
-        elif self.train_test_ratio > 0.5:
-            self.train_test_ratio = 0.5
+            results_df.loc[indx] = [ref, class_, mean, std, MAE, rel_err]
 
-        self.rmsemin, self.rmse_cv_per_component = PLS(self.df_x, self.df_y).optimize_pcs(self.components_range,
-                                                                                          self.selected_labels,
-                                                                                          self.train_test_ratio)
+        df_length = results_df.shape[0]
+        for indx, i in enumerate(np.unique(self.test_groups)):
+            ref = self.y_test[self.label_to_display][self.test_groups.values == i].values.mean()
+            class_ = 'Test'
+            mean = self.y_pred_test[self.label_to_display][self.test_groups.values == i].values.mean()
+            std = self.y_pred_test[self.label_to_display][self.test_groups.values == i].values.std()
+            MAE = mean_absolute_error(self.y_test[self.label_to_display][self.test_groups.values == i].values,
+                                      self.y_pred_test[self.label_to_display][self.test_groups.values == i].values)
+            denominator = self.y_test[self.label_to_display][self.test_groups.values == i].values.mean()
+            # if denominator < 1:
+            #     denominator = 1
+            rel_err = MAE * 100 / np.abs(denominator)
 
-        self.num_components_entry.delete(0, tk.END)
-        self.num_components_entry.insert(tk.END, self.rmsemin + 1)
+            results_df.loc[df_length + indx] = [ref, class_, mean, std, MAE, rel_err]
 
-    def optimize_pls(self):
-
-        self.opt_flag = True
-        self.train_test_ratio = float(self.train_test_ratio_entry.get())
-        self.num_components = min(int(self.num_components_entry.get()),
-                                  self.df_x.shape[0], self.df_x.shape[1])
-        self.label_to_display = str(self.select_label_combobox.get())
-        self.conf = float(self.confidence_entry.get())
-        self.max_outliers = int(self.num_outliers_entry.get())
-
-        self.rmsemin, self.rmse_cv_per_component = PLS(self.df_x, self.df_y).optimize_pcs(self.components_range,
-                                                                                          self.selected_labels,
-                                                                                          self.train_test_ratio)
-
-        (self.df_x, self.df_y, self.q_residuals, self.t_squared,
-         self.q_residuals_conf, self.t_squared_conf,
-         self.rmsemin_index) = PLS(self.df_x, self.df_y).optimize_pls(self.num_components,
-                                                                      self.selected_labels,
-                                                                      self.conf,
-                                                                      self.max_outliers)
-
-        (self.pls, self.y_train, self.y_test, self.y_pred_train,
-         self.y_pred_cv, self.y_pred_test) = PLS(self.df_x, self.df_y).apply_pls(self.num_components,
-                                                                                 self.selected_labels,
-                                                                                 self.train_test_ratio)
-
-        self.y_pred_train = pd.DataFrame(self.y_pred_train, columns=self.selected_labels)
-        self.y_pred_cv = pd.DataFrame(self.y_pred_cv, columns=self.selected_labels)
-        self.y_pred_test = pd.DataFrame(self.y_pred_test, columns=self.selected_labels)
-        self.y_train = self.y_train[self.label_to_display]
-
-        self.y_pred_train = self.y_pred_train[self.label_to_display]
-        self.y_pred_cv = self.y_pred_cv[self.label_to_display]
-
-        # Calculate R^2 score
-        self.r2_train = r2_score(self.y_train, self.y_pred_train)
-        self.r2_cv = r2_score(self.y_train, self.y_pred_cv)
-
-        # calculate RMSE
-        self.rmse_train = np.sqrt(mean_squared_error(self.y_train, self.y_pred_train))
-        self.rmse_cv = np.sqrt(mean_squared_error(self.y_train, self.y_pred_cv))
-
-        if not self.y_pred_test.empty:
-            self.y_test = self.y_test[self.label_to_display]
-            self.y_pred_test = self.y_pred_test[self.label_to_display]
-            self.r2_test = r2_score(self.y_test, self.y_pred_test)
-            self.rmse_test = np.sqrt(mean_squared_error(self.y_test, self.y_pred_test))
-
-        else:
-            self.r2_test = 0
-            self.rmse_test = 0
-
-        self.window.destroy()
-
-        self.show_prediction_results()
+        print('Summary:')
+        print('------------------------')
+        print(results_df)
+        print('________________________________________________________________________')
+        print(results_df.describe())
 
     def show_prediction_results(self):
 
-        y_predicted = PLS(self.df_x, self.df_y).validate_pls(self.pls)
+        # y_predicted = PLS(self.df_x, self.df_y).validate_pls(self.pls, self.selected_labels)
 
-        plt.figure(figsize=(12, 8))
+        plt.figure(figsize=(13, 9))
 
         # Plot the data
-        plt.plot(self.df_y.index, self.df_y[self.label_to_display],
-                 'ob', markersize=3, label=f"Measured - {self.label_to_display}", alpha=0.5)
-        plt.plot(self.df_y.index, y_predicted[self.label_to_display],
-                 'or', markersize=3, label=f"Predicted - {self.label_to_display}", alpha=0.3)
+        plt.plot(self.y_train.index, self.y_train[self.label_to_display],
+                 'ok', markersize=3, label=f"Reference - {self.label_to_display}", alpha=0.5)
+
+        plt.plot(self.y_train.index, self.y_pred_train[self.label_to_display],
+                 'ob', markersize=3, label=f"Predicted Train - {self.label_to_display}", alpha=0.3)
+        # plt.plot(self.y_train.index, self.y_pred_cv[self.label_to_display],
+        #          'or', markersize=3, label=f"Predicted CV - {self.label_to_display}", alpha=0.3)
+        if not self.y_test.empty:
+            plt.plot(self.y_test.index, self.y_test[self.label_to_display],
+                     'ok', markersize=3, alpha=0.5)
+            plt.plot(self.y_test.index, self.y_pred_test[self.label_to_display],
+                     'or', markersize=3, label=f"Predicted Test - {self.label_to_display}", alpha=0.3)
 
         # Add title and labels
-        plt.title('Measured vs Predicted Data', fontsize=16)
+        plt.title('Reference vs Predicted Data', fontsize=16)
         plt.xlabel('Sample Index', fontsize=14)
         plt.ylabel('Value', fontsize=14)
 

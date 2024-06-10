@@ -62,12 +62,13 @@ class DataStandardization:
         self.df_x = df_x
         self.df_y = df_y
 
-    def standardize(self):
-        scaler = StandardScaler()
-        x_standardized = scaler.fit_transform(self.df_x)
-        x_standardized = pd.DataFrame(x_standardized, columns=self.df_x.columns)
+    def unit_vector_normalization(self):
 
-        return x_standardized
+        x = self.df_x
+        x_unit_vector_normalized = x.div(np.sqrt(np.power(x.sum(axis=1), 2)), axis=0)
+        x_unit_vector_normalized = pd.DataFrame(x_unit_vector_normalized, columns=self.df_x.columns)
+
+        return x_unit_vector_normalized
 
     def apply_labels_normalization(self):
 

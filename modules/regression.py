@@ -1,9 +1,10 @@
 import numpy as np
 import pandas as pd
 from sklearn.cross_decomposition import PLSRegression
-from sklearn.model_selection import train_test_split, cross_val_predict
+from sklearn.model_selection import cross_val_predict, GroupKFold, KFold, GroupShuffleSplit, GridSearchCV
 from sklearn.pipeline import make_pipeline
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+from sklearn.preprocessing import StandardScaler
 from scipy.stats import f
 from modules.preprocessing import DataStandardization
 
@@ -14,129 +15,237 @@ class PLS:
         self.df_x = df_x
         self.df_y = df_y
 
-    def apply_pls(self, num_components, selected_labels, train_test_ratio):
+    def train_test(self, test_ratio, groups):
 
-        # Initialize PLS model with desired number of components
-        pls = PLSRegression(n_components=num_components, scale=False, copy=True)
+        x_train, x_test, y_train, y_test = pd.DataFrame([]), pd.DataFrame([]), pd.DataFrame([]), pd.DataFrame([])
 
-        pipeline = make_pipeline(pls)
+        if test_ratio != 0:
+            splits = groups.nunique()
 
-        if train_test_ratio != 0:
+            # Define test split
+            test_split = GroupShuffleSplit(n_splits=splits, test_size=test_ratio,
+                                           train_size=1 - test_ratio, random_state=42)
 
-            # Split data into train and test sets
-            x_train, x_test, y_train, y_test = train_test_split(self.df_x,
-                                                                self.df_y[selected_labels],
-                                                                test_size=train_test_ratio, random_state=42)
-
-            # Fit the model
-            pipeline.fit(x_train, y_train)
-
-            y_pred_train = pipeline.predict(x_train)
-
-            # Cross-validation
-            y_pred_cv = cross_val_predict(pipeline, x_train, y_train, cv=10)
-
-            # Predict on test set
-            y_pred_test = pipeline.predict(x_test)
-
-            return pls, y_train, y_test, y_pred_train, y_pred_cv, y_pred_test
-
-        elif train_test_ratio == 0:
-            x_train = self.df_x.sample(frac=1, random_state=42)
-            y_train = self.df_y[selected_labels].sample(frac=1, random_state=42)
-
-            # Fit the model
-            pipeline.fit(x_train, y_train)
-
-            y_pred_train = pipeline.predict(x_train)
-
-            # Cross-validation
-            y_pred_cv = cross_val_predict(pipeline, x_train, y_train, cv=10)
-
-            return pls, y_train, [], y_pred_train, y_pred_cv, []
-
-    def optimize_pcs(self, components_range, selected_labels, train_test_ratio):
-
-        rmse_cv_per_component = []
-
-        if train_test_ratio != 0:
-
-            # Split data into train and test sets
-            x_train, x_test, y_train, y_test = train_test_split(self.df_x,
-                                                                self.df_y[selected_labels],
-                                                                test_size=train_test_ratio, random_state=42)
+            for train_index, test_index in test_split.split(self.df_x, self.df_y, groups):
+                x_train, x_test = self.df_x.iloc[train_index], self.df_x.iloc[test_index]
+                y_train, y_test = self.df_y.iloc[train_index], self.df_y.iloc[test_index]
 
         else:
-            x_train = self.df_x.sample(frac=1, random_state=42)
-            y_train = self.df_y[selected_labels].sample(frac=1, random_state=42)
+            x_train, y_train = self.df_x.copy(), self.df_y.copy()
 
-        # Iterate over different numbers of components
-        for component in components_range:
-            pls = PLSRegression(n_components=component, scale=False)
-            # pls.fit(x_train, y_train)
-            y_pred_cv = cross_val_predict(pls, x_train, y_train, cv=10)
-            rmse_cv = np.sqrt(mean_squared_error(y_train, y_pred_cv))
+        return x_train, x_test, y_train, y_test
 
-            rmse_cv_per_component.append(rmse_cv)
+    def apply_pls(self, num_components, selected_labels, test_ratio, label_to_display, group_by, max_outliers, conf):
 
-        # Calculate and print the position of minimum in RMSE
-        rmsemin = np.argmin(rmse_cv_per_component)
+        groups = self.df_y[group_by]
+        x_train, x_test, y_train, y_test = self.train_test(test_ratio, groups)
 
-        return rmsemin, rmse_cv_per_component
+        num_train_groups = y_train[group_by].nunique()
 
-    def optimize_pls(self, num_components, selected_labels, conf, max_outliers):
+        train_groups = y_train[group_by].copy()
+        x_train = x_train.copy()
+        y_train = y_train[selected_labels].copy()
 
-        x = self.df_x.copy()
-        y = self.df_y[selected_labels].copy()
+        # Define cv data split
+        cv_split = GroupKFold(n_splits=num_train_groups)
 
-        pls = PLSRegression(n_components=num_components, scale=False)
-        pls.fit(x, y)
+        parameters = {'n_components': np.arange(2, num_components + 1, 1)}
 
-        scores = pls.x_scores_
-        loadings = pls.x_loadings_
+        pls = GridSearchCV(PLSRegression(scale=False), parameters, scoring='neg_mean_squared_error', verbose=1,
+                           cv=cv_split)
+        pls.fit(x_train, y_train, groups=train_groups)
 
-        error = x - np.dot(scores, loadings.T)
-        q_residuals = np.sum(error ** 2, axis=1)
+        if max_outliers != 0:
+            pls, x_train, y_train, train_groups, q_residuals, t_squared, q_residuals_conf, t_squared_conf = (
+                self.remove_outliers(pls, x_train, y_train, train_groups, label_to_display,
+                                     max_outliers, conf, parameters))
+            cv_split = GroupKFold(n_splits=train_groups.nunique())
+
+        else:
+            pass
+
+        y_pred_train = pls.predict(x_train)
+        y_pred_train = pd.DataFrame(y_pred_train, columns=selected_labels)
+
+        y_pred_cv = cross_val_predict(pls.best_estimator_, x_train, y_train, groups=train_groups,
+                                      cv=cv_split)
+        y_pred_cv = pd.DataFrame(y_pred_cv, columns=selected_labels)
+
+        test_groups = pd.DataFrame([])
+        if not x_test.empty:
+            test_groups = y_test[group_by].copy()
+            # Predict on test set
+            y_pred_test = pls.predict(x_test)
+            y_pred_test = pd.DataFrame(y_pred_test, columns=selected_labels)
+        else:
+            y_pred_test = pd.DataFrame([])
+
+        return pls, y_train, y_test, y_pred_train, y_pred_cv, y_pred_test, train_groups, test_groups
+
+    def remove_outliers(self, pls, x_train, y_train, train_groups, label_to_display, max_outliers, conf, parameters):
+
+        ncomp = pls.best_estimator_.n_components
+
+        # Get X scores
+        scores = pls.best_estimator_.x_scores_
+
+        # Get X loadings
+        loadings = pls.best_estimator_.x_loadings_
+
+        # Calculate error array
+        err = x_train - np.dot(scores, loadings.T)
+
+        # Calculate Q-residuals (sum over the rows of the error array)
+        q_residuals = np.sum(err ** 2, axis=1)
+
+        # Calculate Hotelling's T-squared (note that data are normalised by default)
         t_squared = np.sum((scores / np.std(scores, axis=0)) ** 2, axis=1)
 
-        t_squared_conf = (f.ppf(q=conf, dfn=num_components,
-                                dfd=(x.shape[0] - num_components))
-                          * num_components * (x.shape[0] - 1) / (x.shape[0] - num_components))
+        # Calculate confidence level for T-squared from the ppf of the F distribution
+        t_squared_conf = (f.ppf(q=conf, dfn=ncomp, dfd=(x_train.shape[0] - ncomp))
+                          * ncomp * (x_train.shape[0] - 1) / (x_train.shape[0] - ncomp))
 
-        q_residuals_conf = 0
-
+        # Estimate the confidence level for the Q-residuals
         i = np.max(q_residuals) + 1
         while 1 - np.sum(q_residuals > i) / np.sum(q_residuals > 0) > conf:
             i -= 1
-            q_residuals_conf = i
+        q_residuals_conf = i
 
+        # Sort the RMS distance from the origin in descending order (largest first)
         rms_dist = np.flip(np.argsort(np.sqrt(q_residuals ** 2 + t_squared ** 2)), axis=0)
 
-        x_sorted = x.iloc[rms_dist, :]
-        y_sorted = y.iloc[rms_dist, :]
+        # Sort calibration spectra according to descending RMS distance
+        Xc = x_train.iloc[rms_dist, :]
+        Yc = y_train.iloc[rms_dist, :]
+        pls_group_train = train_groups.iloc[rms_dist]
 
-        rmse_cv = np.zeros(max_outliers)
+        # Discard one outlier at a time up to the value max_outliers
+        # and calculate the rmse cross-validation of the PLS model
+
+        # Define empty mse array
+        rmse = np.zeros(max_outliers)
 
         for j in range(max_outliers):
-            pls = PLSRegression(n_components=num_components, scale=False)
-            pls.fit(x_sorted.iloc[j:, :], y_sorted.iloc[j:, :])
-            y_cv = cross_val_predict(pls, x_sorted.iloc[j:, :], y_sorted.iloc[j:, :], cv=10)
+            pls_temp = PLSRegression(n_components=ncomp, scale=True)
+            pls_temp.fit(Xc.iloc[j:, :], Yc.iloc[j:, :])
+            group_kfold = GroupKFold(n_splits=pls_group_train.iloc[j:].nunique() - 1)
+            y_cv = cross_val_predict(pls_temp, Xc.iloc[j:, :], Yc.iloc[j:, :], groups=pls_group_train.iloc[j:],
+                                     cv=group_kfold)
+            y_cv = pd.DataFrame(y_cv, columns=Yc.columns)
 
-            rmse_cv[j] = np.sqrt(mean_squared_error(y_sorted.iloc[j:, :], y_cv))
+            rmse[j] = np.sqrt(mean_squared_error(Yc[label_to_display].iloc[j:], y_cv[label_to_display]))
 
-        rmsemin_index = np.argmin(rmse_cv, axis=0)
+        # Find the position of the minimum in the mse (excluding the zeros)
+        # rmsemin = np.where(rmse == np.min(rmse[np.nonzero(rmse)]))[0][0]
+        rmsemin_index = np.argmin(rmse, axis=0)
 
-        self.df_x = x_sorted.iloc[rmsemin_index:, :].copy()
-        self.df_y = y_sorted.iloc[rmsemin_index:, :].copy()
+        print(f'Removed {rmsemin_index} outliers')
 
-        return self.df_x, self.df_y, q_residuals, t_squared, q_residuals_conf, t_squared_conf, rmsemin_index
+        x_train = Xc.iloc[rmsemin_index:, :].copy()
+        y_train = Yc.iloc[rmsemin_index:, :].copy()
+        pls_group_train = pls_group_train.iloc[rmsemin_index:]
 
-    def validate_pls(self, pls):
+        cv_split = GroupKFold(n_splits=pls_group_train.nunique())
+
+        pls = GridSearchCV(PLSRegression(scale=False), parameters,
+                           scoring='neg_mean_squared_error', verbose=1, cv=cv_split)
+
+        pls.fit(x_train, y_train, groups=pls_group_train)
+
+        return pls, x_train, y_train, pls_group_train, q_residuals, t_squared, q_residuals_conf, t_squared_conf
+
+    # def optimize_pcs(self, components_range, selected_labels, test_ratio, label_to_display):
+    #
+    #     rmse_cv_per_component = []
+    #
+    #     x_train, x_test, y_train, y_test = self.train_test(test_ratio, group_by)
+    #
+    #     # Iterate over different numbers of components
+    #     for component in components_range:
+    #         pls = PLSRegression(n_components=component, scale=False)
+    #         # pls.fit(x_train, y_train)
+    #
+    #         # Define GroupKFold cross-validation
+    #         group_kfold = GroupKFold(n_splits=y_train[label_to_display].nunique())
+    #
+    #         y_pred_cv = cross_val_predict(pls, x_train, y_train, groups=y_train[label_to_display], cv=group_kfold)
+    #         rmse_cv = np.sqrt(mean_squared_error(y_train, y_pred_cv))
+    #
+    #         rmse_cv_per_component.append(rmse_cv)
+    #
+    #     # Calculate and print the position of minimum in RMSE
+    #     rmsemin = np.argmin(rmse_cv_per_component)
+    #
+    #     return rmsemin, rmse_cv_per_component
+
+    # def optimize_pls(self, num_components, selected_labels, conf, max_outliers, test_ratio, label_to_display):
+    #
+    #     x_train, x_test, y_train, y_test = self.train_test(test_ratio, group_by)
+    #
+    #     x = pd.DataFrame(x_train, columns=self.df_x.columns)
+    #     y = pd.DataFrame(y_train, columns=self.df_y.columns)
+    #     y = y[selected_labels]
+    #
+    #     pls = PLSRegression(n_components=num_components, scale=True)
+    #     pls.fit(x, y)
+    #
+    #     scores = pls.x_scores_
+    #     loadings = pls.x_loadings_
+    #
+    #     error = x - np.dot(scores, loadings.T)
+    #     q_residuals = np.sum(error ** 2, axis=1)
+    #     t_squared = np.sum((scores / np.std(scores, axis=0)) ** 2, axis=1)
+    #
+    #     t_squared_conf = (f.ppf(q=conf, dfn=num_components,
+    #                             dfd=(x.shape[0] - num_components))
+    #                       * num_components * (x.shape[0] - 1) / (x.shape[0] - num_components))
+    #
+    #     q_residuals_conf = 0
+    #
+    #     i = np.max(q_residuals) + 1
+    #     while 1 - np.sum(q_residuals > i) / np.sum(q_residuals > 0) > conf:
+    #         i -= 1
+    #         q_residuals_conf = i
+    #
+    #     rms_dist = np.flip(np.argsort(np.sqrt(q_residuals ** 2 + t_squared ** 2)), axis=0)
+    #
+    #     x_sorted = x.iloc[rms_dist, :]
+    #     y_sorted = y.iloc[rms_dist, :]
+    #
+    #     self.df_x = x_sorted
+    #     self.df_y = y_sorted
+    #     x_train, x_test, y_train, y_test = self.train_test(test_ratio, group_by)
+    #     x = pd.DataFrame(x_train, columns=self.df_x.columns)
+    #     y = pd.DataFrame(y_train, columns=selected_labels)
+    #
+    #     rmse_cv = np.zeros(max_outliers)
+    #
+    #     for j in range(max_outliers):
+    #         pls = PLSRegression(n_components=num_components, scale=False)
+    #         pls.fit(x.iloc[j:, :], y.iloc[j:, :])
+    #
+    #         # Define GroupKFold cross-validation
+    #         group_kfold = GroupKFold(n_splits=y[label_to_display].iloc[j:].nunique())
+    #
+    #         y_cv = cross_val_predict(pls, x.iloc[j:, :], y.iloc[j:, :],
+    #                                  groups=y[label_to_display].iloc[j:], cv=group_kfold)
+    #
+    #         rmse = np.sqrt(mean_squared_error(y.iloc[j:, :], y_cv))
+    #         rmse_cv[j] = rmse
+    #
+    #     rmsemin_index = np.argmin(rmse_cv, axis=0)
+    #
+    #     self.df_x = x.iloc[rmsemin_index:, :].copy()
+    #     self.df_y = y.iloc[rmsemin_index:, :].copy()
+    #
+    #     return self.df_x, self.df_y, q_residuals, t_squared, q_residuals_conf, t_squared_conf, rmsemin_index
+
+    def validate_pls(self, pls, selected_labels):
 
         coefficients = pls.coef_
         intercept = pls.intercept_
         y_predict = self.df_x @ coefficients.T + intercept
-        y_predict = pd.DataFrame(np.array(y_predict), columns=self.df_y.columns)
+        y_predict = pd.DataFrame(np.array(y_predict), columns=[selected_labels])
 
         return y_predict
         #
@@ -146,7 +255,7 @@ class PLS:
         # self.x_train, self.x_test, self.y_train, self.y_test = \
         #     train_test_split(self.x_sorted.iloc[self.rmsemin_index:, :],
         #                      self.y_sorted.iloc[self.rmsemin_index:],
-        #                      test_size=self.train_test_ratio)
+        #                      test_size=self.test_ratio)
         #
         # self.pls = PLSRegression(n_components=num_components)
         # # # Fit the model
@@ -186,7 +295,7 @@ class PLS:
 #         self.t_squared = None
 #         self.q_residuals= None
 #         self.components_range = None
-#         self.train_test_ratio = None
+#         self.test_ratio = None
 #         self.selected_label = None
 #         self.top_left_plot = None
 #         self.parent = parent
@@ -222,12 +331,12 @@ class PLS:
 #         self.select_label_combobox.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
 #         self.select_label_combobox.current(0)
 #
-#         self.train_test_ratio_label = ttk.Label(self.window, text="Test/Train ratio (0-0.5):")
-#         self.train_test_ratio_label.grid(row=1, column=0, padx=5, pady=5, sticky='ew')
+#         self.test_ratio_label = ttk.Label(self.window, text="Test/Train ratio (0-0.5):")
+#         self.test_ratio_label.grid(row=1, column=0, padx=5, pady=5, sticky='ew')
 #
-#         self.train_test_ratio_entry = ttk.Entry(self.window)
-#         self.train_test_ratio_entry.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
-#         self.train_test_ratio_entry.insert(tk.END, "0.1")
+#         self.test_ratio_entry = ttk.Entry(self.window)
+#         self.test_ratio_entry.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
+#         self.test_ratio_entry.insert(tk.END, "0.1")
 #
 #         # Label and entry for number of components
 #         self.num_components_label = ttk.Label(self.window, text="Number of Components:")
@@ -266,7 +375,7 @@ class PLS:
 #
 #     def optimize_pls(self):
 #         self.selected_label = self.select_label_combobox.get()
-#         self.train_test_ratio = float(self.train_test_ratio_entry.get())
+#         self.test_ratio = float(self.test_ratio_entry.get())
 #         num_components = int(self.num_components_entry.get())
 #         pls = PLSRegression(n_components=num_components)
 #         pls.fit(self.df_x, self.df_y)
@@ -315,7 +424,7 @@ class PLS:
 #         self.x_train, self.x_test, self.y_train, self.y_test = \
 #             train_test_split(self.x_sorted.iloc[self.rmsemin_index:, :],
 #                              self.y_sorted.iloc[self.rmsemin_index:],
-#                              test_size=self.train_test_ratio)
+#                              test_size=self.test_ratio)
 #
 #         self.pls = PLSRegression(n_components=num_components)
 #         # # Fit the model
@@ -344,11 +453,11 @@ class PLS:
 #
 #         self.num_components = int(self.num_components_entry.get())
 #         self.selected_label = self.select_label_combobox.get()
-#         self.train_test_ratio = float(self.train_test_ratio_entry.get())
-#         if self.train_test_ratio < 0.001:
-#             self.train_test_ratio = 0.001
-#         if self.train_test_ratio > 0.5:
-#             self.train_test_ratio = 0.5
+#         self.test_ratio = float(self.test_ratio_entry.get())
+#         if self.test_ratio < 0.001:
+#             self.test_ratio = 0.001
+#         if self.test_ratio > 0.5:
+#             self.test_ratio = 0.5
 #
 #         self.selected_label = self.select_label_combobox.get()
 #
