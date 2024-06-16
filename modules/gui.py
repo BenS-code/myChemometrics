@@ -7,7 +7,10 @@ import tkinter as tk
 from tkinter import ttk, filedialog
 from modules.preprocessing import DataInspection, DataFiltering, DataStandardization
 from modules.regression import PLS
+from modules.classification import Classification
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+from matplotlib.patches import Circle
+from sklearn.preprocessing import MinMaxScaler
 
 
 class Main:
@@ -188,12 +191,16 @@ class Main:
         self.select_x_button.pack(side="left", fill="both", padx=5, pady=5)
 
         self.display_data_button = ttk.Button(self.data_buttons_frame, text="Display Data", state="disabled",
-                                              command=self.display_xy)
+                                              command=lambda: self.display_xy(self.df_x, self.df_y))
         self.display_data_button.pack(side="left", fill="both", padx=5, pady=5)
 
         self.filter_data_button = ttk.Button(self.preprocessing_buttons_frame, text="Filter Data", state="disabled",
                                              command=self.open_data_filtering_window)
         self.filter_data_button.pack(side="left", fill="both", padx=5, pady=5)
+
+        self.augment_data_button = ttk.Button(self.preprocessing_buttons_frame, text="Augment Data", state="disabled",
+                                              command=self.apply_augmentation)
+        self.augment_data_button.pack(side="left", fill="both", padx=5, pady=5)
 
         self.standardscaler_button = ttk.Button(self.preprocessing_buttons_frame, text="Label Normalization",
                                                 state="disabled",
@@ -209,15 +216,15 @@ class Main:
         self.snv_button.pack(side="left", fill="both", padx=5, pady=5)
 
         self.pls_button = ttk.Button(self.regression_buttons_frame, text="PLS", state="disabled",
-                                     command=self.open_pls_window)
+                                     command=self.open_regression_window)
         self.pls_button.pack(side="left", fill="both", padx=5, pady=5)
 
         self.pca_button = ttk.Button(self.classifier_buttons_frame, text="PCA", state="disabled",
-                                     command=False)  # lambda: self.open_classification_window('PCA')
+                                     command=lambda: self.open_classification_window('PCA'))
         self.pca_button.pack(side="left", fill="both", padx=5, pady=5)
 
         self.LDA_button = ttk.Button(self.classifier_buttons_frame, text="LDA", state="disabled",
-                                     command=False)  # lambda: self.open_classification_window('LDA')
+                                     command=lambda: self.open_classification_window('LDA'))
         self.LDA_button.pack(side="left", fill="both", padx=5, pady=5)
 
         self.load_test_button = ttk.Button(self.test_model_buttons_frame, text="Load Test", state="disabled",
@@ -339,6 +346,7 @@ class Main:
             self.select_x_button["state"] = "normal"
             if self.df_x is not None and self.df_y is not None:
                 self.display_data_button["state"] = "normal"
+                self.augment_data_button["state"] = "normal"
                 self.filter_data_button["state"] = "normal"
                 self.standardscaler_button["state"] = "normal"
                 self.msc_button["state"] = "normal"
@@ -358,7 +366,7 @@ class Main:
                     self.pca_button["state"] = "disabled"
                     self.LDA_button["state"] = "disabled"
 
-    def display_xy(self):
+    def display_xy(self, df_x, df_y):
 
         self.fig1.clear()
         self.fig2.clear()
@@ -370,7 +378,7 @@ class Main:
         ax3 = self.fig3.add_subplot(111)
         ax4 = self.fig4.add_subplot(111)
 
-        ax1.plot(self.df_x.columns, self.df_x.T)
+        ax1.plot(df_x.columns, df_x.T)
         ax1.set_title('X')
         ax1.set_xlabel('X columns [a.u]')
         ax1.set_ylabel('X values [a.u]')
@@ -378,8 +386,8 @@ class Main:
         # Specify tick positions manually
         ax1.xaxis.set_major_locator(plt.MaxNLocator(6))
 
-        for i in range(self.df_y.shape[1]):
-            ax2.scatter(self.df_y.index, self.df_y.iloc[:, i], label=self.df_y.columns[i])
+        for i in range(df_y.shape[1]):
+            ax2.scatter(df_y.index, df_y.iloc[:, i], label=df_y.columns[i])
         ax2.set_title('y')
         ax2.set_xlabel('y columns [a.u]')
         ax2.set_ylabel('y values [a.u]')
@@ -387,21 +395,21 @@ class Main:
         ax2.legend(loc='best')
         ax2.xaxis.set_major_locator(plt.MaxNLocator(6))
 
-        dissimilarities = DataInspection(self.df_x, self.df_y).anomaly_detection()
+        dissimilarities = DataInspection(df_x, df_y).anomaly_detection()
 
-        ax3.scatter(self.df_x.index, dissimilarities)
+        ax3.scatter(df_x.index, dissimilarities)
         ax3.set_title('Absolute Normalized Correlation Distance of X')
         ax3.set_xlabel('X rows [a.u]')
         ax3.set_ylabel('Amplitude [a.u]')
         ax3.grid(True, alpha=0.3)
         ax3.xaxis.set_major_locator(plt.MaxNLocator(6))
 
-        ax4.violinplot(self.df_y, showmeans=True, showmedians=False)
-        ax4.boxplot(self.df_y, sym=".")
+        ax4.violinplot(df_y, showmeans=True, showmedians=False)
+        ax4.boxplot(df_y, sym=".")
         ax4.set_xlabel('Value [a.u]')
 
-        ax4.set_xticks(range(1, len(self.df_y.columns) + 1))
-        ax4.set_xticklabels(self.df_y.columns)
+        ax4.set_xticks(range(1, len(df_y.columns) + 1))
+        ax4.set_xticklabels(df_y.columns)
 
         self.top_left_plot.draw()
         self.top_right_plot.draw()
@@ -428,24 +436,91 @@ class Main:
         self.y_rows.set(str(self.df_y.shape[0]))
         self.y_cols.set(str(self.df_y.shape[1]))
 
-        self.display_xy()
+        self.display_xy(self.df_x, self.df_y)
+
+    def apply_augmentation(self):
+
+        df_temp = pd.concat([self.df_y, self.df_x], axis=1)
+        # Group the DataFrame according to the specific column
+        grouped = df_temp.groupby('test #')
+
+        flag = 'max'
+        equalized_data = []
+
+        if flag == 'min':
+
+            # Determine the size of the smallest group
+            min_group_size = grouped.size().min()
+
+            # Sample data from each group to make them the same size
+
+            for _, group_data in grouped:
+                equalized_data.append(group_data.sample(n=min_group_size, random_state=None))
+
+        elif flag == 'max':
+
+            # Determine the size of the largest group
+            max_group_size = grouped.size().max()
+
+            noise_gain = 0.4
+
+            for name, group_data in grouped:
+                group_size = len(group_data)
+
+                # Append the original group data
+                equalized_data.append(group_data)
+
+                # Calculate the number of rows to pad
+                rows_to_add = max_group_size - group_size
+
+                if rows_to_add > 0:
+                    # Calculate the mean and std values for the group's columns
+                    mean_values = group_data.mean()
+                    std_values = noise_gain * group_data.std()
+
+                    # Create new rows with mean + random value between -std and +std
+                    padding_data = {col: np.random.uniform(mean - std, mean + std, rows_to_add)
+                                    for col, mean, std in zip(group_data.columns, mean_values, std_values)}
+                    padding_df = pd.DataFrame(padding_data)
+
+                    # Set the group column to the current group's name
+                    padding_df['test #'] = name
+
+                    # Append the padding data
+                    equalized_data.append(padding_df)
+
+        # Concatenate the original and padded data into a new DataFrame
+        equalized_df = pd.concat(equalized_data, ignore_index=True)
+
+        self.df_x = equalized_df[self.selected_x_columns]
+        self.df_y = equalized_df[self.selected_y_columns]
+
+        self.display_table(self.features_data_tree, self.df_x)
+        self.display_table(self.labels_data_tree, self.df_y)
+
+        self.x_rows.set(str(self.df_x.shape[0]))
+        self.x_cols.set(str(self.df_x.shape[1]))
+        self.y_rows.set(str(self.df_y.shape[0]))
+        self.y_cols.set(str(self.df_y.shape[1]))
+
+        self.display_xy(self.df_x, self.df_y)
 
     def apply_labels_normalization(self):
-        self.df_y = DataStandardization(self.df_x, self.df_y).apply_labels_normalization()
+        df_y = DataStandardization(self.df_x, self.df_y).apply_labels_normalization()
         self.display_table(self.labels_data_tree, self.df_y)
-        self.display_xy()
+        self.display_xy(self.df_x, df_y)
 
     def apply_msc(self):
         self.df_x = DataStandardization(self.df_x, self.df_y).apply_msc()
         self.display_table(self.features_data_tree, self.df_x)
-        self.display_xy()
+        self.display_xy(self.df_x, self.df_y)
 
     def apply_snv(self):
         self.df_x = DataStandardization(self.df_x, self.df_y).apply_snv()
         self.display_table(self.features_data_tree, self.df_x)
-        self.display_xy()
+        self.display_xy(self.df_x, self.df_y)
 
-    def open_pls_window(self):
+    def open_regression_window(self):
         regression_window = RegressionWin(self.root, self.df_x, self.df_y)
 
         self.root.wait_window(regression_window.window)
@@ -616,6 +691,177 @@ class Main:
 
         regression_window.show_prediction_results()
 
+    def open_classification_window(self, class_type):
+        classification_window = ClassificationWin(self.root, self.df_x, self.df_y, class_type)
+
+        self.root.wait_window(classification_window.window)
+
+        self.fig1.clear()
+        self.fig2.clear()
+        self.fig3.clear()
+        self.fig4.clear()
+
+        ax1 = self.fig1.add_subplot(111)
+        ax2 = self.fig2.add_subplot(111)
+        ax3 = self.fig3.add_subplot(111)
+        ax4 = self.fig4.add_subplot(111)
+
+        if class_type == 'PCA':
+            scatter = ax1.scatter(classification_window.x_pca[:, classification_window.x_pc],
+                                  classification_window.x_pca[:, classification_window.y_pc],
+                                  c=self.df_y[classification_window.selected_label].values)
+            ax1.set_title('PCA')
+            ax1.set_xlabel('PC' + str(classification_window.x_pc + 1))
+            ax1.set_ylabel('PC' + str(classification_window.y_pc + 1))
+            ax1.grid(True, alpha=0.3)
+            # Specify tick positions manually
+            ax1.xaxis.set_major_locator(plt.MaxNLocator(6))
+
+            cbar = self.fig1.colorbar(scatter)
+            cbar.set_label(classification_window.selected_label)
+
+            ax2.plot(range(1, len(classification_window.explained_variance_ratio) + 1),
+                     classification_window.explained_variance_ratio, '-ob',
+                     label='Explained Variance ratio')
+            ax2.plot(range(1, len(classification_window.explained_variance_ratio) + 1),
+                     np.cumsum(classification_window.explained_variance_ratio), '-or',
+                     label='Cumulative Variance ratio')
+            ax2.set_title('Explained Variance')
+            ax2.set_xlabel('PC Number')
+            ax2.set_ylabel('Ratio')
+            ax2.grid(True, alpha=0.3)
+            ax2.legend(loc='best')
+            ax2.set_xlim(0.5, 10.5)
+            ax2.xaxis.set_major_locator(plt.MaxNLocator(6))
+
+            cmap = plt.get_cmap('viridis')
+            for i, j in enumerate(classification_window.euclidian_dist):
+                arrow_col = (classification_window.euclidian_dist[i] - np.array(classification_window.euclidian_dist).min()) / (
+                        np.array(classification_window.euclidian_dist).max() -
+                        np.array(classification_window.euclidian_dist).min())
+                ax3.arrow(0, 0,  # Arrows start at the origin
+                          classification_window.corr_circle[i][0],  # 0 for PC1
+                          classification_window.corr_circle[i][1],  # 1 for PC2
+                          lw=2,  # line width
+                          length_includes_head=True,
+                          color=cmap(arrow_col),
+                          fc=cmap(arrow_col),
+                          head_width=0.05,
+                          head_length=0.05)
+                ax3.text((classification_window.corr_circle[i][0]), (classification_window.corr_circle[i][1]),
+                         self.df_x.columns[i], size=8)
+            # Draw the unit circle, for clarity
+            circle = Circle((0, 0), 1, facecolor='none', edgecolor='k', linewidth=1, alpha=0.5)
+            ax3.add_patch(circle)
+            ax3.set_title('PCA Correlation Circle')
+            ax3.set_xlabel('PC1')
+            ax3.set_ylabel('PC2')
+            ax3.set_xlim(-1, 1)
+            ax3.set_ylim(-1, 1)
+            ax3.axis('equal')
+            ax3.grid(True, alpha=0.3)
+            ax3.xaxis.set_major_locator(plt.MaxNLocator(6))
+
+            arr_2d = np.array(classification_window.euclidian_dist).reshape(-1, 1)
+            scaler = MinMaxScaler()
+            scaler.fit(arr_2d)
+
+            eucl_dist_scaled = scaler.transform(arr_2d).flatten()
+            for i in range(self.df_x.shape[1]):
+                ax4.scatter(float(self.df_x.columns.values[i]), self.df_x.mean(axis=0).values[i],
+                            color=cmap(eucl_dist_scaled[i]))
+            ax4.set_title('Correlation Bands')
+            ax4.set_xlabel('X columns')
+            ax4.set_ylabel('Value')
+
+            ax4.xaxis.set_major_locator(plt.MaxNLocator(6))
+            ax4.grid(True, alpha=0.3)
+
+        elif classification_window.class_type == 'LDA':
+            cluster_means = []
+            for label in np.unique(classification_window.y_binned):
+                cluster_means.append(np.mean(classification_window.x_lda[classification_window.y_binned == label],
+                                             axis=0))
+
+            scatter = ax1.scatter(classification_window.x_lda[:, classification_window.x_pc],
+                                  classification_window.x_lda[:, classification_window.y_pc],
+                                  c=classification_window.y_binned, cmap='viridis', alpha=0.5)
+            ax1.scatter(np.array(cluster_means)[:, classification_window.x_pc],
+                        np.array(cluster_means)[:, classification_window.y_pc],
+                        c='red', marker='x', label='Cluster Means')
+            ax1.set_title('LDA')
+            ax1.set_xlabel('PC' + str(classification_window.x_pc + 1))
+            ax1.set_ylabel('PC' + str(classification_window.y_pc + 1))
+            ax1.legend(loc='best')
+            ax1.grid(True, alpha=0.3)
+            # Specify tick positions manually
+            ax1.xaxis.set_major_locator(plt.MaxNLocator(6))
+
+            cbar = self.fig1.colorbar(scatter)
+            cbar.set_label(classification_window.selected_label + ' (binned)')
+
+            ax2.plot(range(1, len(classification_window.explained_variance_ratio) + 1),
+                     classification_window.explained_variance_ratio, '-ob',
+                     label='Explained Variance ratio')
+            ax2.plot(range(1, len(classification_window.explained_variance_ratio) + 1),
+                     np.cumsum(classification_window.explained_variance_ratio), '-or',
+                     label='Cumulative Variance ratio')
+            ax2.set_title('Explained Variance')
+            ax2.set_xlabel('PC Number')
+            ax2.set_ylabel('Ratio')
+            ax2.grid(True, alpha=0.3)
+            ax2.legend(loc='best')
+            ax2.set_xlim(0.5, 10.5)
+            ax2.xaxis.set_major_locator(plt.MaxNLocator(6))
+
+            cmap = plt.get_cmap('viridis')
+            for i, j in enumerate(classification_window.euclidian_dist):
+                arrow_col = (classification_window.euclidian_dist[i] - np.array(classification_window.euclidian_dist).min()) / (
+                        np.array(classification_window.euclidian_dist).max() -
+                        np.array(classification_window.euclidian_dist).min())
+                ax3.arrow(0, 0,  # Arrows start at the origin
+                          classification_window.corr_circle[i][0],  # 0 for PC1
+                          classification_window.corr_circle[i][1],  # 1 for PC2
+                          lw=2,  # line width
+                          length_includes_head=True,
+                          color=cmap(arrow_col),
+                          fc=cmap(arrow_col),
+                          head_width=0.05,
+                          head_length=0.05)
+                ax3.text((classification_window.corr_circle[i][0]), (classification_window.corr_circle[i][1]),
+                         self.df_x.columns[i], size=8)
+            # Draw the unit circle, for clarity
+            circle = Circle((0, 0), 1, facecolor='none', edgecolor='k', linewidth=1, alpha=0.5)
+            ax3.add_patch(circle)
+            ax3.set_title('LDA Correlation Circle')
+            ax3.set_xlabel('PC1')
+            ax3.set_ylabel('PC2')
+            ax3.set_xlim(-1, 1)
+            ax3.set_ylim(-1, 1)
+            ax3.axis('equal')
+            ax3.grid(True, alpha=0.3)
+            ax3.xaxis.set_major_locator(plt.MaxNLocator(6))
+
+            arr_2d = np.array(classification_window.euclidian_dist).reshape(-1, 1)
+            scaler = MinMaxScaler()
+            scaler.fit(arr_2d)
+
+            eucl_dist_scaled = scaler.transform(arr_2d).flatten()
+            for i in range(self.df_x.shape[1]):
+                ax4.scatter(float(self.df_x.columns.values[i]), self.df_x.mean(axis=0).values[i],
+                            color=cmap(eucl_dist_scaled[i]))
+            ax4.set_title('Correlation Bands')
+            ax4.set_xlabel('X columns')
+            ax4.set_ylabel('Value')
+
+            ax4.xaxis.set_major_locator(plt.MaxNLocator(6))
+            ax4.grid(True, alpha=0.3)
+
+        self.top_left_plot.draw()
+        self.top_right_plot.draw()
+        self.bottom_left_plot.draw()
+        self.bottom_right_plot.draw()
+
 
 class DataSelectionWin:
     def __init__(self, root, df):
@@ -701,22 +947,22 @@ class DataFilteringWin:
 
 class ClassificationWin:
     def __init__(self, root, df_x, df_y, class_type):
-        # self.y_binned = None
-        # self.x_lda = None
-        # self.lda = None
-        # self.selected_label = None
-        # self.class_type = class_type
-        # self.x_pc = 0
-        # self.y_pc = 1
-        # self.euclidian_dist = []
-        # self.corr_circle = []
-        # self.explained_variance_ratio = None
-        # self.x_pca = None
-        # self.pca = None
-        # self.root = root
-        # self.df_x = df_x
-        # self.df_y = df_y
-        # self.num_components = None
+        self.y_binned = None
+        self.x_lda = None
+        self.lda = None
+        self.selected_label = ''
+        self.class_type = class_type
+        self.x_pc = 0
+        self.y_pc = 1
+        self.euclidian_dist = []
+        self.corr_circle = []
+        self.explained_variance_ratio = []
+        self.x_pca = []
+        self.pca = []
+        self.root = root
+        self.df_x = df_x
+        self.df_y = df_y
+        self.num_components = []
 
         self.window = tk.Toplevel(root)
         self.window.title("Classification Options")
@@ -747,15 +993,33 @@ class ClassificationWin:
         self.select_label_combobox.current(0)
 
         # Apply and Cancel buttons
-        self.apply_button = ttk.Button(self.window, text="Apply", command=False)  #self.apply_classification
+        self.apply_button = ttk.Button(self.window, text="Apply",
+                                       command=self.apply_classification)
         self.apply_button.grid(row=3, column=0, padx=5, pady=5)
 
         self.cancel_button = ttk.Button(self.window, text="Cancel", command=self.window.destroy)
         self.cancel_button.grid(row=3, column=1, padx=5, pady=5)
 
+    def apply_classification(self):
+        self.selected_label = self.select_label_combobox.get()
+        self.x_pc = int(self.x_pc_entry.get()) - 1
+        self.y_pc = int(self.y_pc_entry.get()) - 1
+        self.num_components = max([self.x_pc, self.y_pc])
 
-#
-#
+        if self.class_type == 'PCA':
+
+            self.pca, self.x_pca, self.explained_variance_ratio, self.corr_circle, self.euclidian_dist = (
+                Classification(self.df_x, self.df_y).apply_classification(self.class_type, self.num_components,
+                                                                          self.selected_label))
+        elif self.class_type == 'LDA':
+            (self.lda, self.x_lda, self.explained_variance_ratio, self.corr_circle,
+             self.euclidian_dist, self.y_binned) = (
+                Classification(self.df_x, self.df_y).apply_classification(self.class_type, self.num_components,
+                                                                          self.selected_label))
+
+        self.window.destroy()
+
+
 class RegressionWin:
     def __init__(self, root, df_x, df_y):
 
@@ -951,7 +1215,7 @@ class RegressionWin:
 
             results_df.loc[df_length + indx] = [ref, class_, mean, std, MAE, rel_err]
 
-        print('Summary:')
+        print(f'Summary: {self.label_to_display} - PCs = {self.pls.best_estimator_.n_components}')
         print('------------------------')
         print(results_df)
         print('________________________________________________________________________')
