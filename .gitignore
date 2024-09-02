@@ -1,0 +1,7 @@
+*.[oa]
+*.~
+data
+*.ipynb
+.ipynb_checkpoints
+.idea
+artifacts
