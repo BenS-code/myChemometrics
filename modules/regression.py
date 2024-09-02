@@ -24,7 +24,7 @@ class PLS:
 
             # Define test split
             test_split = GroupShuffleSplit(n_splits=splits, test_size=test_ratio,
-                                           train_size=1 - test_ratio, random_state=42)
+                                           train_size=1 - test_ratio, random_state=None)
 
             for train_index, test_index in test_split.split(self.df_x, self.df_y, groups):
                 x_train, x_test = self.df_x.iloc[train_index], self.df_x.iloc[test_index]

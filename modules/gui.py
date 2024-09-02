@@ -406,7 +406,7 @@ class Main:
 
         ax4.violinplot(df_y, showmeans=True, showmedians=False)
         ax4.boxplot(df_y, sym=".")
-        ax4.set_xlabel('Value [a.u]')
+        ax4.set_ylabel('Value [a.u]')
 
         ax4.set_xticks(range(1, len(df_y.columns) + 1))
         ax4.set_xticklabels(df_y.columns)
@@ -573,7 +573,8 @@ class Main:
             colLabels=['', 'RMSE', 'R-Square', 'Slope'],
             loc='upper left',
             cellLoc='center',
-            cellColours=[['w', 'b', 'b', 'b'], ['w', 'r', 'r', 'r'], ['w', 'g', 'g', 'g']])
+            # cellColours=[['w', 'b', 'b', 'b'], ['w', 'r', 'r', 'r'], ['w', 'g', 'g', 'g']])
+            cellColours = [['w', 'w', 'w', 'w'], ['w', 'w', 'w', 'w'], ['w', 'w', 'w', 'w']])
 
         # Styling the legend table
         legend_table.auto_set_font_size(False)
@@ -1196,6 +1197,8 @@ class RegressionWin:
             denominator = self.y_train[self.label_to_display][self.train_groups.values == i].values.mean()
             # if denominator < 1:
             #     denominator = 1
+            if denominator < 0.001:
+                denominator = 0.001
             rel_err = MAE * 100 / np.abs(denominator)
 
             results_df.loc[indx] = [ref, class_, mean, std, MAE, rel_err]
